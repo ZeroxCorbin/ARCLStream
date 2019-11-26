@@ -44,9 +44,10 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Arcl.cs" />
+    <Compile Include="ArclQueueManager.cs" />
     <Compile Include="ArclStatus.cs" />
     <Compile Include="ArclIO.cs" />
-    <Compile Include="ArclQueue.cs" />
+    <Compile Include="ARCLTypes.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

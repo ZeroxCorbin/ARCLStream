@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ARCLTypes;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -18,7 +19,7 @@ namespace ARCL
         public delegate void DelayedEventHandler(DelayedEventArgs data);
         public event DelayedEventHandler Delayed;
 
-        private readonly Arcl Robot;
+        private readonly ARCLConnection Robot;
 
         private Stopwatch Stopwatch = new Stopwatch();
 
@@ -30,7 +31,7 @@ namespace ARCL
 
         private List<string> Devices = new List<string>();
 
-        public ArclStatus(Arcl robot)
+        public ArclStatus(ARCLConnection robot)
         {
             Robot = robot;
         }
@@ -46,7 +47,7 @@ namespace ARCL
             ThreadPool.QueueUserWorkItem(new WaitCallback(AsyncThread_DoWork));
         }
 
-        private void Robot_StatusDataReceived(object sender, Arcl.StatusEventArgs data)
+        private void Robot_StatusDataReceived(object sender, StatusEventArgs data)
         {
             Heartbeat = true;
             TTL = Stopwatch.ElapsedMilliseconds;

@@ -1,4 +1,5 @@
 ﻿using ARCL;
+using ARCLTypes;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -78,7 +79,7 @@ namespace ARCLStream
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="data"></param>
-        private void ArclStream_ArclDataReceived(object sender, ARCL.Arcl.ArclEventArgs data)
+        private void ArclStream_ArclDataReceived(object sender, ArclEventArgs data)
         {
             string[] messages = RobotParse(data.Message);
 
@@ -134,9 +135,9 @@ namespace ARCLStream
         /// </summary>
         public string SoftIO { get; set; }
 
-        private Arcl Robot;
+        private ARCLConnection Robot;
 
-        public EXTIO(Arcl robot)
+        public EXTIO(ARCLConnection robot)
         {
             Robot = robot;
             ioList = new Dictionary<string, int>();

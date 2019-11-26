@@ -8,230 +8,17 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 
+using ARCLTypes;
+
 namespace ARCL
 {
-    public class Arcl : IDisposable
+    public class ARCLConnection : IDisposable
     {
-
-        public class ArclEventArgs : EventArgs
-        {
-            public string Message { get; }
-            public ArclEventArgs(string msg)
-            {
-                Message = msg;
-            }
-        }
-
-        public class ArclStreamEventArgs : EventArgs
-        {
-            public string Message { get; }
-            public ArclStreamEventArgs(string msg)
-            {
-                Message = msg;
-            }
-        }
-
-        public class QueueEventArgs : EventArgs
-        {
-            public string Message { get; }
-            public string Segment { get; }
-            public string TimeStarted { get; }
-            public string TimeFinished { get; }
-            public int FailCount { get; }
-            public QueueEventArgs(string msg)
-            {
-                Message = msg;
-                Segment = msg.Split(' ')[7];
-                TimeStarted = msg.Split(' ')[10];
-                TimeFinished = msg.Split(' ')[12];
-                FailCount = Convert.ToInt32(msg.Split(' ')[13]);
-            }
-        }
-
-        public class RangeDeviceEventArgs : EventArgs
-        {
-            public bool IsCurrent { get; set; } = false;
-            public string Name { get; set; } = string.Empty;
-            public string Message { get; set; }
-            public List<float[]> Data { get; set; } = new List<float[]>();
-
-            public float Timestamp = 0;
-
-            public RangeDeviceEventArgs(string msg, bool isReplay = false)
-            {
-                Message = msg;
-                string[] rawData;
-
-                if (isReplay)
-                {
-                    string[] spl = msg.Split(',');
-                    rawData = spl[2].Split();
-                    Name = spl[1];
-
-                    IsCurrent = true;
-
-                    if (float.TryParse(spl[0], out float res))
-                        Timestamp = res;
-                }
-                else
-                {
-                    rawData = msg.Split();
-                    Name = rawData[1];
-                }
-
-                IsCurrent = rawData[0].Contains("RangeDeviceGetCurrent") ? true : false;
-
-                int i = 3;
-                for (; i < rawData.Length - 3; i += 3)
-                {
-                    float[] fl = new float[2];
-                    fl[0] = float.Parse(rawData[i]);
-                    fl[1] = float.Parse(rawData[i + 1]);
-                    Data.Add(fl);
-                }
-            }
-        }
-
-        public class StatusEventArgs : EventArgs
-        {
-            public string Message { get; set; } = string.Empty;
-            public string Status { get; set; } = string.Empty;
-            public string DockingState { get; set; } = string.Empty;
-            public string ForcedState { get; set; } = string.Empty;
-            public float ChargeState { get; set; }
-            public float StateOfCharge { get; set; }
-            public string Location { get; set; } = string.Empty;
-            public float X { get; set; }
-            public float Y { get; set; }
-            public float Heading { get; set; }
-            public float Temperature { get; set; }
-
-            public float Timestamp { get; set; }
-
-            public StatusEventArgs(string msg, bool isReplay = false)
-            {
-                if (isReplay)
-                {
-                    //0.361,encoderTransform,82849.2 -33808.8 140.02
-                    Message = msg;
-                    string[] spl = msg.Split(',');
-                    string[] loc = spl[2].Split();
-
-                        Location = String.Format("{0},{1},{2}", loc[0], loc[1], loc[2]);
-
-                        X = float.Parse(loc[0]);
-                        Y = float.Parse(loc[1]);
-                        Heading = float.Parse(loc[2]);
-
-                    if (float.TryParse(spl[0], out float res))
-                    {
-                        Timestamp = res;
-                    }
-                    else
-                    {
-                        if (!spl[0].Equals("starting"))
-                        {
-
-                        }
-                    }
-
-                }
-                else
-                {
-                    Message = msg;
-                    string[] spl = msg.Split();
-                    int i = 0;
-                    float val = 0.0f;
-
-                    while (true)
-                    {
-                        switch (spl[i])
-                        {
-                            case "Status:":
-                                while (true)
-                                {
-                                    if (spl[i + 1].Contains(":") & !spl[i + 1].Contains("Error")) break;
-                                    Status += spl[++i] + ' ';
-                                }
-                                break;
-
-                            case "DockingState:":
-                                if (!spl[i + 1].Contains(':'))
-                                    DockingState = spl[++i];
-                                break;
-
-                            case "ForcedState:":
-                                if (!spl[i + 1].Contains(':'))
-                                    ForcedState = spl[++i];
-                                break;
-
-                            case "ChargeState:":
-                                if (!spl[i + 1].Contains(':'))
-                                    if (float.TryParse(spl[++i], out val))
-                                        ChargeState = val;
-                                break;
-
-                            case "StateOfCharge:":
-                                if (!spl[i + 1].Contains(':'))
-                                    if (float.TryParse(spl[++i], out val))
-                                        StateOfCharge = val;
-                                break;
-
-                            case "Location:":
-                                if (!spl[i + 1].Contains(':'))
-                                {
-                                    Location = String.Format("{0},{1},{2}", spl[++i], spl[++i], spl[++i]);
-                                    string[] spl1 = Location.Split(',');
-                                    X = float.Parse(spl1[0]);
-                                    Y = float.Parse(spl1[1]);
-                                    Heading = float.Parse(spl1[2]);
-                                }
-
-                                break;
-                            case "Temperature:":
-                                if (!spl[i + 1].Contains(':'))
-                                    if (float.TryParse(spl[++i], out val))
-                                        Temperature = val;
-                                break;
-
-                            default:
-                                break;
-                        }
-
-                        i++;
-                        if (spl.Length == i) break;
-                    }
-                }
-
-            }
-        }
-
-        public class JobDoneEventArgs : EventArgs
-        {
-            public string Message { get; }
-            public JobDoneEventArgs(string msg)
-            {
-                Message = msg;
-            }
-        }
-
-        public class ExtIOEventArgs : EventArgs
-        {
-            public string Message { get; }
-            public ExtIOEventArgs(string msg)
-            {
-                Message = msg;
-            }
-        }
-
         public delegate void ArclDataReceivedEventHandler(object sender, ArclEventArgs data);
         public event ArclDataReceivedEventHandler ArclDataReceived;
 
-        private delegate void ArclAsyncventHandler(object sender, ArclEventArgs data);
-        private event ArclAsyncventHandler ArclAsyncDataReceived;
-
-        public delegate void QueueDataReceivedEventHandler(object sender, QueueEventArgs data);
-        public event QueueDataReceivedEventHandler QueueDataReceived;
+        public delegate void QueueUpdateReceivedEventHandler(object sender, QueueUpdateEventArgs data);
+        public event QueueUpdateReceivedEventHandler QueueUpdateReceived;
 
         public delegate void StatusDataReceivedEventHandler(object sender, StatusEventArgs data);
         public event StatusDataReceivedEventHandler StatusDataReceived;
@@ -245,21 +32,6 @@ namespace ARCL
         public delegate void ExtIODataReceivedEventHandler(object sender, ExtIOEventArgs data);
         public event ExtIODataReceivedEventHandler ExtIODataReceived;
 
-
-        public string GenerateConnectionString(string ip, int port, string pass) => ip + ":" + port.ToString() + pass;
-        public static bool ValidateConnectionString(string connectionString)
-        {
-            if (connectionString.Count(c => c == ':') != 2) return false;
-            string[] spl = connectionString.Split(':');
-
-            if (!System.Net.IPAddress.TryParse(spl[0], out IPAddress ip)) return false;
-
-            if (!int.TryParse(spl[1], out int port)) return false;
-
-            if (spl[2].Length <= 0) return false;
-
-            return true;
-        }
         public string ConnectionString { get; private set; }
         public string IPAddress
         {
@@ -286,8 +58,6 @@ namespace ARCL
             }
         }
 
-        private TcpClient Client;
-        private NetworkStream ClientStream;
         public int BufferSize { get; private set; } = 1024;
         public int SendTimeout { get; private set; } = 500;
         public int RecieveTimeout { get; private set; } = 500;
@@ -296,12 +66,34 @@ namespace ARCL
 
         public bool IsRunning { get; private set; } = true;
         public int UpdateRate { get; private set; } = 50;
+
+        private delegate void ArclAsyncventHandler(object sender, ArclEventArgs data);
+        private event ArclAsyncventHandler ArclAsyncDataReceived;
+
+        private TcpClient Client;
+        private NetworkStream ClientStream;
+
         private object LockObject = new object();
 
-
-        public Arcl(string connectionString)
+        public ARCLConnection(string connectionString)
         {
             ConnectionString = connectionString;
+        }
+
+
+        public string GenerateConnectionString(string ip, int port, string pass) => ip + ":" + port.ToString() + pass;
+        public static bool ValidateConnectionString(string connectionString)
+        {
+            if (connectionString.Count(c => c == ':') != 2) return false;
+            string[] spl = connectionString.Split(':');
+
+            if (!System.Net.IPAddress.TryParse(spl[0], out IPAddress ip)) return false;
+
+            if (!int.TryParse(spl[1], out int port)) return false;
+
+            if (spl[2].Length <= 0) return false;
+
+            return true;
         }
 
         public bool Connect(bool withTimeout)
@@ -399,6 +191,7 @@ namespace ARCL
             IsRunning = true;
 
             ArclAsyncDataReceived += AsyncRecieveThread_ArclAsyncDataReceived;
+
             ThreadPool.QueueUserWorkItem(new WaitCallback(AsyncRecieveThread_DoWork));
         }
         public void StopRecieveAsync()
@@ -417,7 +210,7 @@ namespace ARCL
                     msg = ReadMessage();
                     if (msg.Length > 0)
                         ArclAsyncDataReceived?.Invoke(this, new ArclEventArgs(msg));
-                    Thread.Sleep(UpdateRate);
+                    //Thread.Sleep(UpdateRate);
                 }
             }
             catch (Exception ex)
@@ -433,8 +226,9 @@ namespace ARCL
 
             foreach (string message in messages)
             {
-                if (message.StartsWith("QueueUpdate"))
-                    QueueDataReceived?.Invoke(this, new QueueEventArgs(message));
+                if (message.StartsWith("queue", StringComparison.CurrentCultureIgnoreCase) && 
+                    !message.StartsWith("queuerobot", StringComparison.CurrentCultureIgnoreCase))
+                    QueueUpdateReceived?.Invoke(this, new QueueUpdateEventArgs(message));
 
                 if (message.StartsWith("extIOOutputUpdate") || message.Contains("extIOInputUpdate"))
                     ExtIODataReceived?.Invoke(this, new ExtIOEventArgs(message));
@@ -517,7 +311,7 @@ namespace ARCL
             int timeout = 45000; //ms
             Stopwatch sw = new Stopwatch();
             StringBuilder completeMessage = new System.Text.StringBuilder();
-
+            
             try
             {
                 sw.Start();
@@ -525,24 +319,15 @@ namespace ARCL
                 {
                     if (ClientStream.CanRead && ClientStream.DataAvailable)
                     {
-                        int readBuffer = 0;
-                        char singleChar = '~';
+                        char singleChar = (char)ClientStream.ReadByte();
 
-                        while (singleChar != '\n' && singleChar != '\r')
-                        {
-                            // Read the first byte of the stream
-                            readBuffer = ClientStream.ReadByte();
-
-                            //Start converting and appending the bytes into a message
-                            singleChar = (char)readBuffer;
-
+                        if(singleChar == '\n' || singleChar == '\f')
+                            return completeMessage.ToString();
+                        else if(singleChar != '\r')
                             completeMessage.AppendFormat("{0}", singleChar.ToString());
 
-                            if (sw.ElapsedMilliseconds >= timeout)
-                                throw new TimeoutException();
-
-                        }
-                        sw.Stop();
+                        if (sw.ElapsedMilliseconds >= timeout)
+                            throw new TimeoutException();
                     }
                 }
             }
@@ -551,6 +336,7 @@ namespace ARCL
                 Console.WriteLine(ex);
                 throw;
             }
+
             return completeMessage.ToString();
         }
         public string ReadMessage()
@@ -598,7 +384,7 @@ namespace ARCL
         public bool Write(string msg)
         {
             byte[] buffer_ot = new byte[BufferSize];
-            msg += '\r';
+            msg += "\r\n";
             try
             {
                 lock (LockObject)
