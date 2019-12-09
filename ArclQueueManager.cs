@@ -262,7 +262,7 @@ namespace ARCLQueue
             return Arcl.Write("QueueShow");
         }
 
-        public bool QueueMulti(List<QueueUpdateEventArgs> goals)
+        public string QueueMulti(List<QueueUpdateEventArgs> goals)
         {
             StringBuilder msg = new StringBuilder();
             string space = " ";
@@ -288,10 +288,12 @@ namespace ARCLQueue
                 msg.Append(space);
             }
 
-            msg.Append(GetNewJobID());
+            string id = GetNewJobID();
+            msg.Append(id);
+            
+            Arcl.Write(msg.ToString());
 
-            return Arcl.Write(msg.ToString());
+            return id;
         }
-
     }
 }

@@ -300,7 +300,7 @@ namespace ARCLTypes
                     if (spl.Length < 13)
                         throw new QueueUpdateParseException();
 
-                    GoalName = GoalName = spl[2].Replace("\"", "");
+                    GoalName = spl[2].Replace("\"", "");
 
                     if (int.TryParse(spl[5], out int pri))
                         Priority = pri;
