@@ -13,7 +13,7 @@ namespace ARCLQueue
 {
     public class ArclQueueManager
     {
-        private ARCLConnection Arcl;
+        private ARCLConnection ARCL;
 
         public Dictionary<string, QueueManagerJob> Jobs;
 
@@ -22,8 +22,8 @@ namespace ARCLQueue
 
         public ArclQueueManager(ARCLConnection arcl)
         {
-            Arcl = arcl;
-            Arcl.QueueUpdateReceived += Robot_QueueUpdateReceived;
+            ARCL = arcl;
+            ARCL.QueueUpdateReceived += Robot_QueueUpdateReceived;
 
             Jobs = new Dictionary<string, QueueManagerJob>();
 
@@ -96,22 +96,22 @@ namespace ARCLQueue
             #endregion
 
             //Clear out message buffer
-            Arcl.ReadMessage();
+            ARCL.ReadMessage();
             //Write to the queue
-            Arcl.Write(jobToQueue);
+            ARCL.Write(jobToQueue);
 
             #region Get ID and number of segments
             timeout.Start();
             while (timeout.ElapsedMilliseconds < 5000)
             {
-                msg = Arcl.Read();
+                msg = ARCL.Read();
 
 
                 if (msg.Contains("QueueMulti:"))
                 {
                     if (!msg.Contains("EndQueueMulti"))
                     {
-                        msg += Arcl.Read("EndQueueMulti");
+                        msg += ARCL.Read("EndQueueMulti");
                     }
 
                     timeout.Stop();
@@ -175,91 +175,11 @@ namespace ARCLQueue
             #endregion
 
         }
-        public bool QueuePickup(string goal, out string o_jobid)
-        {
-            bool status = Arcl.Write("queuepickup " + goal);
-            Thread.Sleep(500);
-            string result = Arcl.Read();
 
-            // Find the beginning of the message.
-            int idx = result.IndexOf("queuepickup");
-            if (idx < 0)
-            {
-                o_jobid = "null";
-                return false;
-            }
-
-            // Find the job_id field
-            string sub = result.Substring(idx);
-            idx = sub.IndexOf("job_id");
-            if (idx < 0)
-            {
-                o_jobid = "null";
-                return false;
-            }
-
-            // Get the job id
-            sub = sub.Substring(idx);
-            string[] splt = sub.Split(' ');
-            o_jobid = splt[1];
-            if (o_jobid.Contains("JOB"))
-                return true;
-
-            o_jobid = "null";
-            return false;
-        }
-        public bool QueuePickupDropoff(string goalPick, string goalDrop, out string o_jobid)
-        {
-            bool status = Arcl.Write("queuepickup " + goalPick);
-            Thread.Sleep(500);
-            string result = Arcl.Read();
-
-            // Find the beginning of the message.
-            int idx = result.IndexOf("queuepickup");
-            if (idx < 0)
-            {
-                o_jobid = "null";
-                return false;
-            }
-
-            // Find the job_id field
-            string sub = result.Substring(idx);
-            idx = sub.IndexOf("job_id");
-            if (idx < 0)
-            {
-                o_jobid = "null";
-                return false;
-            }
-
-            // Get the job id
-            sub = sub.Substring(idx);
-            string[] splt = sub.Split(' ');
-            o_jobid = splt[1];
-            if (o_jobid.Contains("JOB"))
-                return true;
-
-            o_jobid = "null";
-            return false;
-        }
-        public bool QueueCancel(string jobID)
-        {
-            bool status = Arcl.Write("queuecancel jobid " + jobID);
-            return status;
-        }
-
-        public bool QueueQuery(string jobID, out string o_status)
-        {
-            string result = String.Empty;
-            bool status = Arcl.Write("queuequery jobID " + jobID);
-            Thread.Sleep(500);
-            result = Arcl.Read();
-            o_status = result;
-            return status;
-        }
 
         public bool QueueShow()
         {
-            return Arcl.Write("QueueShow");
+            return ARCL.Write("QueueShow");
         }
 
         public string QueueMulti(List<QueueUpdateEventArgs> goals)
@@ -291,9 +211,92 @@ namespace ARCLQueue
             string id = GetNewJobID();
             msg.Append(id);
             
-            Arcl.Write(msg.ToString());
+            ARCL.Write(msg.ToString());
 
             return id;
         }
+
+
+        //public bool QueuePickup(string goal, out string o_jobid)
+        //{
+        //    bool status = ARCL.Write("queuepickup " + goal);
+        //    Thread.Sleep(500);
+        //    string result = ARCL.Read();
+
+        //    // Find the beginning of the message.
+        //    int idx = result.IndexOf("queuepickup");
+        //    if (idx < 0)
+        //    {
+        //        o_jobid = "null";
+        //        return false;
+        //    }
+
+        //    // Find the job_id field
+        //    string sub = result.Substring(idx);
+        //    idx = sub.IndexOf("job_id");
+        //    if (idx < 0)
+        //    {
+        //        o_jobid = "null";
+        //        return false;
+        //    }
+
+        //    // Get the job id
+        //    sub = sub.Substring(idx);
+        //    string[] splt = sub.Split(' ');
+        //    o_jobid = splt[1];
+        //    if (o_jobid.Contains("JOB"))
+        //        return true;
+
+        //    o_jobid = "null";
+        //    return false;
+        //}
+        //public bool QueuePickupDropoff(string goalPick, string goalDrop, out string o_jobid)
+        //{
+        //    bool status = ARCL.Write("queuepickup " + goalPick);
+        //    Thread.Sleep(500);
+        //    string result = ARCL.Read();
+
+        //    // Find the beginning of the message.
+        //    int idx = result.IndexOf("queuepickup");
+        //    if (idx < 0)
+        //    {
+        //        o_jobid = "null";
+        //        return false;
+        //    }
+
+        //    // Find the job_id field
+        //    string sub = result.Substring(idx);
+        //    idx = sub.IndexOf("job_id");
+        //    if (idx < 0)
+        //    {
+        //        o_jobid = "null";
+        //        return false;
+        //    }
+
+        //    // Get the job id
+        //    sub = sub.Substring(idx);
+        //    string[] splt = sub.Split(' ');
+        //    o_jobid = splt[1];
+        //    if (o_jobid.Contains("JOB"))
+        //        return true;
+
+        //    o_jobid = "null";
+        //    return false;
+        //}
+        //public bool QueueCancel(string jobID)
+        //{
+        //    bool status = ARCL.Write("queuecancel jobid " + jobID);
+        //    return status;
+        //}
+
+        //public bool QueueQuery(string jobID, out string o_status)
+        //{
+        //    string result = String.Empty;
+        //    bool status = ARCL.Write("queuequery jobID " + jobID);
+        //    Thread.Sleep(500);
+        //    result = ARCL.Read();
+        //    o_status = result;
+        //    return status;
+        //}
     }
 }
