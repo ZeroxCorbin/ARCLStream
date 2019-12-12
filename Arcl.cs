@@ -14,8 +14,8 @@ namespace ARCL
 {
     public class ARCLConnection : IDisposable
     {
-        public delegate void ArclDataReceivedEventHandler(object sender, ArclEventArgs data);
-        public event ArclDataReceivedEventHandler ArclDataReceived;
+        public delegate void ARCLDataReceivedEventHandler(object sender, ARCLEventArgs data);
+        public event ARCLDataReceivedEventHandler ARCLDataReceived;
 
         public delegate void QueueUpdateReceivedEventHandler(object sender, QueueUpdateEventArgs data);
         public event QueueUpdateReceivedEventHandler QueueUpdateReceived;
@@ -66,8 +66,8 @@ namespace ARCL
         public bool IsRunning { get; private set; } = true;
 
 
-        private delegate void ArclAsyncventHandler(object sender, ArclEventArgs data);
-        private event ArclAsyncventHandler ArclAsyncDataReceived;
+        private delegate void ARCLAsyncventHandler(object sender, ARCLEventArgs data);
+        private event ARCLAsyncventHandler ARCLAsyncDataReceived;
 
         private TcpClient Client;
         private NetworkStream ClientStream;
@@ -187,13 +187,13 @@ namespace ARCL
             UpdateRate = rate;
             IsRunning = true;
 
-            ArclAsyncDataReceived += AsyncRecieveThread_ArclAsyncDataReceived;
+            ARCLAsyncDataReceived += AsyncRecieveThread_ARCLAsyncDataReceived;
 
             ThreadPool.QueueUserWorkItem(new WaitCallback(AsyncRecieveThread_DoWork));
         }
         public void StopRecieveAsync()
         {
-            ArclAsyncDataReceived -= AsyncRecieveThread_ArclAsyncDataReceived;
+            ARCLAsyncDataReceived -= AsyncRecieveThread_ARCLAsyncDataReceived;
             IsRunning = false;
             Thread.Sleep(UpdateRate + 100);
         }
@@ -508,7 +508,7 @@ namespace ARCL
                 {
                     msg = ReadMessage();
                     if (msg.Length > 0)
-                        ArclAsyncDataReceived?.Invoke(this, new ArclEventArgs(msg));
+                        ARCLAsyncDataReceived?.Invoke(this, new ARCLEventArgs(msg));
                     //Thread.Sleep(UpdateRate);
                 }
             }
@@ -517,11 +517,11 @@ namespace ARCL
                 Console.WriteLine(ex.Message);
             }
         }
-        private void AsyncRecieveThread_ArclAsyncDataReceived(object sender, ArclEventArgs data)
+        private void AsyncRecieveThread_ARCLAsyncDataReceived(object sender, ARCLEventArgs data)
         {
             string[] messages = MessageParse(data.Message);
 
-            ArclDataReceived?.Invoke(this, new ArclEventArgs(data.Message));
+            ARCLDataReceived?.Invoke(this, new ARCLEventArgs(data.Message));
 
             foreach (string message in messages)
             {

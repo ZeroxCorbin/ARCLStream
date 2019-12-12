@@ -1,17 +1,13 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using ARCL;
 using ARCLTypes;
 
-namespace ARCLQueue
+namespace ARCL
 {
-    public class ArclQueueManager
+    public class ARCLQueueManager
     {
         private ARCLConnection ARCL;
 
@@ -20,7 +16,7 @@ namespace ARCLQueue
         public delegate void JobDoneEventHandler(object sender, QueueUpdateEventArgs data);
         public event JobDoneEventHandler JobDone;
 
-        public ArclQueueManager(ARCLConnection arcl)
+        public ARCLQueueManager(ARCLConnection arcl)
         {
             ARCL = arcl;
         }

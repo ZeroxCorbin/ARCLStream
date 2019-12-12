@@ -6,19 +6,19 @@ using System.Threading.Tasks;
 
 namespace ARCLTypes
 {
-    public class ArclEventArgs : EventArgs
+    public class ARCLEventArgs : EventArgs
     {
         public string Message { get; }
-        public ArclEventArgs(string msg)
+        public ARCLEventArgs(string msg)
         {
             Message = msg;
         }
     }
 
-    public class ArclStreamEventArgs : EventArgs
+    public class ARCLStreamEventArgs : EventArgs
     {
         public string Message { get; }
-        public ArclStreamEventArgs(string msg)
+        public ARCLStreamEventArgs(string msg)
         {
             Message = msg;
         }

@@ -1,147 +1,118 @@
-﻿using ARCL;
-using ARCLTypes;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
+using ARCLTypes;
 
-namespace ARCLStream
+namespace ARCL
 {
-    public class EXTIO
+    public class ARCLExtIO
     {
-        /*public void extioAdd(string extName, int extIn, int extOut)
-{
-    string confAdd = "configAdd ";
-    string beginList = "_beginList ";
-    string endList = "_endList ";
-    string linefeed = "\r\n";
+        public delegate void ExtIOUpdateEventHandler(object sender, ExtIOEventArgs data);
+        public event ExtIOUpdateEventHandler ExtIOUpdate;
 
-    Write(String.Format("extioAdd {0} {1} {2}", extName, extIn, extOut));
-
-    Thread.Sleep(100);
-
-    string extioUpdate = "configStart\r\nconfigAdd Section External Digital Inputs\r\n";
-
-    for(int i = 0; i<extIn; i++)
-    {
-        extioUpdate += String.Format("{0}{1}{4}_Input{1}{2}configAdd Alias {0}_i1\r\n_beginList OnList\r\nconfigAdd")
-    }
-
-
-}*/
-
-        public delegate void ExtIODataReceivedEventHandler(object sender, ExtIOEventArgs data);
-        public event ExtIODataReceivedEventHandler ExtIODataReceived;
-
-        /// <summary>
-        /// Custom event args for External IO events.
-        /// </summary>
-        public class ExtIOEventArgs : EventArgs
+        public class DelayedEventArgs : EventArgs
         {
-
-            /// <summary>
-            /// The message.
-            /// </summary>
-            private string message;
-
-            /// <summary>
-            /// Gets the message.
-            /// </summary>
-            public string Message
+            public bool Delayed = false;
+            public DelayedEventArgs(bool delayed)
             {
-                get { return message; }
-            }
-
-            /// <summary>
-            /// Constructor.
-            /// </summary>
-            /// <param name="msg">The EXTIO message.</param>
-            public ExtIOEventArgs(string msg)
-            {
-                message = msg;
+                Delayed = delayed;
             }
         }
+        public delegate void DelayedEventHandler(DelayedEventArgs data);
+        public event DelayedEventHandler Delayed;
 
         /// <summary>
         /// Dictionary of all the External Digital Inputs and Outputs created.
         /// Key is exio name + "_input" or "_output".
         /// Value is current state in hex.
         /// </summary>
-        private Dictionary<string, int> ioList;
-
-
-        #region Data handling
+        public Dictionary<string, int> List { get; private set; }
         /// <summary>
-        /// Fire this method when we receive anything from ArclDataReceived event to fire some events depending on what we received.
+        /// Dictionary of number of inputs or outputs associated with the key, which is shared with List.
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="data"></param>
-        private void ArclStream_ArclDataReceived(object sender, ArclEventArgs data)
-        {
-            string[] messages = RobotParse(data.Message);
+        public Dictionary<string, int> Count { get; private set; }
 
-            foreach (string message in messages)
-            {
-                if (message.Contains("extIOOutputUpdate") || message.Contains("extIOInputUpdate"))
+
+        private Stopwatch Stopwatch = new Stopwatch();
+
+        public int UpdateRate { get; private set; } = 50;
+        public bool IsRunning { get; private set; } = false;
+        public long TTL { get; private set; }
+        public bool IsDelayed { get; private set; } = false;
+
+        private bool Heartbeat = false;
+
+        private ARCLConnection ARCL;
+        public ARCLExtIO(ARCLConnection arcl)
+        {
+            ARCL = arcl;
+
+            List = new Dictionary<string, int>();
+            Count = new Dictionary<string, int>();
+        }
+
+        public void Start(int updateRate)
+        {
+            if (!ARCL.IsRunning)
+                ARCL.StartRecieveAsync();
+
+            ARCL.ExtIOReceived += ARCL_ExtIOReceived;
+
+            UpdateRate = updateRate;
+            IsRunning = true;
+            ThreadPool.QueueUserWorkItem(new WaitCallback(AsyncThread_DoWork));
+        }
+
+        private void ARCL_ExtIOReceived(object sender, ExtIOEventArgs data)
+        {
+
+                if (data.Message.Contains("extIOOutputUpdate") || data.Message.Contains("extIOInputUpdate"))
                 {
-                    ExtIODataReceived?.Invoke(this, new ExtIOEventArgs(message));
+                    ExtIOUpdate?.Invoke(this, data);
+                }
+            
+        }
+
+        public void Stop()
+        {
+            ARCL.ExtIOReceived -= ARCL_ExtIOReceived;
+
+            IsRunning = false;
+            Thread.Sleep(UpdateRate + 100);
+        }
+
+        private void AsyncThread_DoWork(object sender)
+        {
+            while (IsRunning)
+            {
+                if (!IsDelayed) Stopwatch.Reset();
+
+                //Send status request here
+
+                Heartbeat = false;
+
+                Thread.Sleep(UpdateRate);
+
+                if (Heartbeat)
+                {
+                    if (IsDelayed) Delayed?.Invoke(new DelayedEventArgs(false));
+                    IsDelayed = false;
+                }
+                else
+                {
+                    if (!IsDelayed) Delayed?.Invoke(new DelayedEventArgs(true));
+                    IsDelayed = true;
                 }
             }
         }
 
-        /// <summary>
-        /// This method will take anything read from ARCL and split it by line. This prevents messages being clumped together.
-        /// </summary>
-        /// <param name="message"></param>
-        /// <returns></returns>
-        public string[] RobotParse(string message)
-        {
-            string[] messages;
-
-            List<string> _messages = new List<string>();
-
-            foreach (string item in message.Split('\n', '\r'))
-            {
-                if (!String.IsNullOrEmpty(item))
-                {
-                    _messages.Add(item);
-                }
-            }
-            messages = _messages.ToArray();
-            return messages;
-        }
-
-        #endregion
-
-        /// <summary>
-        /// Grab the ioList
-        /// </summary>
-        /// <returns>Key ExtIO name +_input/_output and Value state in hex</returns>
-        public Dictionary<string, int> getIOList()
-        {
-            return ioList;
-        }
-
-        /// <summary>
-        /// Dictionary of number of inputs or outputs associated with the key, which is shared with ioList.
-        /// </summary>
-        private Dictionary<string, int> ioCount = new Dictionary<string, int>();
 
         /// <summary>
         /// Which extio to use as softsignals if running in the background.
         /// </summary>
         public string SoftIO { get; set; }
-
-        private ARCLConnection Robot;
-
-        public EXTIO(ARCLConnection robot)
-        {
-            Robot = robot;
-            ioList = new Dictionary<string, int>();
-        }
 
         /// <summary>
         /// Use to see if a specific external IO already exists.
@@ -159,7 +130,7 @@ namespace ARCLStream
 
             int count = 0;
 
-            sectionValues = GetConfigSectionValue("external digital inputs");
+            sectionValues = ARCL.GetConfigSectionValue("external digital inputs");
             foreach (string item in sectionValues)
             {
                 if (item.Contains(name + "_Input"))
@@ -176,15 +147,15 @@ namespace ARCLStream
                 existsIn = true;
             }
 
-            if (!ioCount.ContainsKey(name + "_input"))
+            if (!Count.ContainsKey(name + "_input"))
             {
-                ioCount.Add(name + "_input", count);
+                Count.Add(name + "_input", count);
             }
 
             Thread.Sleep(100);
 
             count = 0;
-            sectionValues = GetConfigSectionValue("external digital outputs");
+            sectionValues = ARCL.GetConfigSectionValue("external digital outputs");
             foreach (string item in sectionValues)
             {
                 if (item.Contains(name + "_Output"))
@@ -200,93 +171,13 @@ namespace ARCLStream
                 existsOut = true;
             }
 
-            if (!ioCount.ContainsKey(name + "_output"))
+            if (!Count.ContainsKey(name + "_output"))
             {
-                ioCount.Add(name + "_output", count);
+                Count.Add(name + "_output", count);
             }
 
             return (existsIn && existsOut);
         }
-
-        /// <summary>
-        /// See the config section and values.
-        /// </summary>
-        /// <param name="section">Section to read</param>
-        /// <returns>Returns a list of every line</returns>
-        public List<string> GetConfigSectionValue(string section)
-        {
-            List<string> SectionValues = new List<string>();
-
-            string rawMessage = null;
-            string fullMessage = "";
-            string lastMessage = "";
-            string[] messages;
-            Thread.Sleep(100);
-            Robot.ReadMessage();
-            Robot.Write(string.Format("getconfigsectionvalues {0}\r\n", section));
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
-
-            do
-            {
-                while (String.IsNullOrEmpty(rawMessage))
-                {
-                    rawMessage = Robot.ReadLine();
-
-                    fullMessage = rawMessage;
-                    if (sw.ElapsedMilliseconds > 1000)
-                    {
-                        throw new TimeoutException();
-
-                    }
-                }
-                sw.Restart();
-
-                if (rawMessage.Contains("CommandError"))
-                {
-                    Console.WriteLine("Config section \"{0}\" does not exist", section);
-                    rawMessage = "EndOfGetConfigSectionValues";
-                    fullMessage = rawMessage;
-                }
-                else
-                {
-                    while (!rawMessage.Contains("EndOfGetConfigSectionValues"))
-                    {
-                        rawMessage = Robot.ReadLine();
-
-                        if (!string.IsNullOrEmpty(rawMessage))
-                        {
-                            fullMessage += rawMessage;
-                        }
-
-                    }
-                    sw.Stop();
-                }
-
-                messages = Robot.MessageParse(fullMessage);
-
-                foreach (string message in messages)
-                {
-                    if (message.Contains("GetConfigSectionValue:"))
-                    {
-                        SectionValues.Add(message.Split(':')[1]);
-
-                    }
-                    if (message.Contains("EndOfGetConfigSectionValues"))
-                    {
-                        lastMessage = message;
-                        break;
-                    }
-                    if (message.Contains("CommandErrorDescription: No section of name"))
-                    {
-                        lastMessage = "EndOfGetConfigSectionValues";
-                    }
-                }
-            } while (!lastMessage.Contains("EndOfGetConfigSectionValues"));
-
-            return SectionValues;
-        }
-
 
         /// <summary>
         /// Use to create a new external IO
@@ -298,14 +189,14 @@ namespace ARCLStream
         public bool CreateExtIO(string name, int numIn, int numOut)
         {
             bool success = false;
-            Robot.Write("\r\n");
-            Robot.ReadMessage();
-            Robot.Write(string.Format("extioAdd {0} {1} {2}\r\n", name, numIn.ToString(), numOut.ToString()));
-            string message = Robot.Read();
+            ARCL.Write("\r\n");
+            ARCL.ReadMessage();
+            ARCL.Write(string.Format("extioAdd {0} {1} {2}\r\n", name, numIn.ToString(), numOut.ToString()));
+            string message = ARCL.Read();
             int attempts = 0;
             while (String.IsNullOrEmpty(message))
             {
-                message = Robot.Read();
+                message = ARCL.Read();
                 if (attempts > 1000)
                 {
                     break;
@@ -345,29 +236,29 @@ namespace ARCLStream
         public void defaultExtIO(string name, int numIn, int numOut)
         {
             Console.WriteLine("Setting IO to defaults.");
-            Robot.Write("configStart\r\n");
-            Robot.Write("configAdd Section External Digital Inputs\r\n");
+            ARCL.Write("configStart\r\n");
+            ARCL.Write("configAdd Section External Digital Inputs\r\n");
             for (int i = 1; i <= numIn; i++)
             {
-                Robot.Write("configAdd _beginList " + name + "_Input_" + i + "\r\n");
-                Robot.Write("configAdd Alias " + name + "_i" + i + "\r\n");
-                Robot.Write("configAdd _beginList OnList\r\n");
-                Robot.Write("configAdd Count 1\r\n");
-                Robot.Write("configAdd Type1 custom\r\n");
-                Robot.Write("configAdd _endList OnList\r\n");
-                Robot.Write("configAdd _endList " + name + "_Input_" + i + "\r\n");
+                ARCL.Write("configAdd _beginList " + name + "_Input_" + i + "\r\n");
+                ARCL.Write("configAdd Alias " + name + "_i" + i + "\r\n");
+                ARCL.Write("configAdd _beginList OnList\r\n");
+                ARCL.Write("configAdd Count 1\r\n");
+                ARCL.Write("configAdd Type1 custom\r\n");
+                ARCL.Write("configAdd _endList OnList\r\n");
+                ARCL.Write("configAdd _endList " + name + "_Input_" + i + "\r\n");
             }
 
-            Robot.Write("configAdd Section External Digital Outputs\r\n");
+            ARCL.Write("configAdd Section External Digital Outputs\r\n");
             for (int o = 1; o <= numIn; o++)
             {
-                Robot.Write("configAdd _beginList " + name + "_Output_" + o + "\r\n");
-                Robot.Write("configAdd Alias " + name + "_o" + o + "\r\n");
-                Robot.Write("configAdd Type1 custom\r\n");
-                Robot.Write("configAdd _endList " + name + "_Output_" + o + "\r\n");
+                ARCL.Write("configAdd _beginList " + name + "_Output_" + o + "\r\n");
+                ARCL.Write("configAdd Alias " + name + "_o" + o + "\r\n");
+                ARCL.Write("configAdd Type1 custom\r\n");
+                ARCL.Write("configAdd _endList " + name + "_Output_" + o + "\r\n");
             }
 
-            Robot.Write("configParse\r\n");
+            ARCL.Write("configParse\r\n");
             Thread.Sleep(500);
 
         }
@@ -378,24 +269,24 @@ namespace ARCLStream
         /// <param name="name"></param>
         public void ioListAdd(string name, int numIn, int numOut)
         {
-            if (!ioList.Keys.Contains(name + "_input"))
+            if (!List.Keys.Contains(name + "_input"))
             {
-                ioList.Add(string.Format("{0}_input", name), 0);
+                List.Add(string.Format("{0}_input", name), 0);
             }
 
-            if (!ioList.Keys.Contains(name + "_output"))
+            if (!List.Keys.Contains(name + "_output"))
             {
-                ioList.Add(string.Format("{0}_output", name), 0);
+                List.Add(string.Format("{0}_output", name), 0);
             }
 
-            if (!ioCount.ContainsKey(name + "_input"))
+            if (!Count.ContainsKey(name + "_input"))
             {
-                ioCount.Add(name, numIn);
+                Count.Add(name, numIn);
             }
 
-            if (!ioCount.ContainsKey(name + "_output"))
+            if (!Count.ContainsKey(name + "_output"))
             {
-                ioCount.Add(name, numOut);
+                Count.Add(name, numOut);
             }
         }
 
@@ -413,7 +304,7 @@ namespace ARCLStream
             int value = int.Parse(bit, System.Globalization.NumberStyles.AllowHexSpecifier);
 
 
-            ioList[name + "_" + type] = value;
+            List[name + "_" + type] = value;
         }
 
         /// <summary>
@@ -422,9 +313,9 @@ namespace ARCLStream
         /// <param name="ioName">Name of the external IO to turn into soft signal</param>
         public void softSignal(string ioName)
         {
-            if (ioList[ioName + "_output"] != ioList[ioName + "_input"])
+            if (List[ioName + "_output"] != List[ioName + "_input"])
             {
-                Robot.Write(string.Format("extioInputUpdate {0} {1}", ioName, ioList[ioName + "_output"]));
+                ARCL.Write(string.Format("extioInputUpdate {0} {1}", ioName, List[ioName + "_output"]));
             }
         }
 
@@ -439,13 +330,13 @@ namespace ARCLStream
             while (true)
             {
 
-                foreach (string item in ioList.Keys)
+                foreach (string item in List.Keys)
                 {
                     //Console.WriteLine(item);
                 }
-                if (ioList[ioName + "_output"] != ioList[ioName + "_input"])
+                if (List[ioName + "_output"] != List[ioName + "_input"])
                 {
-                    Robot.Write(string.Format("extioInputUpdate {0} {1}", ioName, ioList[ioName + "_output"]));
+                    ARCL.Write(string.Format("extioInputUpdate {0} {1}", ioName, List[ioName + "_output"]));
                 }
 
                 Thread.Sleep(20);
@@ -461,11 +352,11 @@ namespace ARCLStream
         public void OutputOn(string output, int value)
         {
             int _value = value;
-            int _valuePrev = ioList[output + "_output"];
+            int _valuePrev = List[output + "_output"];
 
             _value |= _valuePrev;
 
-            Robot.Write(string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
+            ARCL.Write(string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
         }
 
         /// <summary>
@@ -480,7 +371,7 @@ namespace ARCLStream
 
             int value = int.Parse(bit, System.Globalization.NumberStyles.AllowHexSpecifier);
 
-            Robot.Write(string.Format("extioOutputUpdate {0} {1}\r\n", name, value));
+            ARCL.Write(string.Format("extioOutputUpdate {0} {1}\r\n", name, value));
         }
 
         /// <summary>
@@ -491,14 +382,14 @@ namespace ARCLStream
         public void OutputOff(string output, int value)
         {
             int _value = value;
-            int Length = ioCount[output + "_output"];
-            int _valuePrev = ioList[output + "_output"];
+            int Length = Count[output + "_output"];
+            int _valuePrev = List[output + "_output"];
 
             _value = (Convert.ToInt32(Convert.ToString(_value, 2).PadLeft(Length, '0')));
             _value = ~value & 0xf;
             _value &= _valuePrev;
             Console.WriteLine("Writing: " + string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
-            Robot.Write(string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
+            ARCL.Write(string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
 
         }
 
@@ -510,11 +401,11 @@ namespace ARCLStream
         public void InputOn(string input, int value)
         {
             int _value = value;
-            int _valuePrev = ioList[input + "_input"];
+            int _valuePrev = List[input + "_input"];
 
             _value |= _valuePrev;
 
-            Robot.Write(string.Format("extIOInputUpdate {0} {1}\r\n", input, _value));
+            ARCL.Write(string.Format("extIOInputUpdate {0} {1}\r\n", input, _value));
         }
 
         /// <summary>
@@ -525,14 +416,14 @@ namespace ARCLStream
         public void InputOff(string input, int value)
         {
             int _value = value;
-            int Length = ioCount[input + "_input"];
-            int _valuePrev = ioList[input + "_input"];
+            int Length = Count[input + "_input"];
+            int _valuePrev = List[input + "_input"];
 
             _value = (Convert.ToInt32(Convert.ToString(_value, 2).PadLeft(Length, '0')));
             _value = ~value & 0xf;
             _value &= _valuePrev;
 
-            Robot.Write(string.Format("extIOInputUpdate {0} {1}\r\n", input, _value));
+            ARCL.Write(string.Format("extIOInputUpdate {0} {1}\r\n", input, _value));
         }
 
     }

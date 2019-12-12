@@ -1,12 +1,11 @@
-﻿using ARCLTypes;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
-
+using ARCLTypes;
 namespace ARCL
 {
-    public class ArclStatus
+    public class ARCLStatus
     {
         public class DelayedEventArgs : EventArgs
         {
@@ -31,7 +30,7 @@ namespace ARCL
 
         private List<string> Devices = new List<string>();
 
-        public ArclStatus(ARCLConnection arcl)
+        public ARCLStatus(ARCLConnection arcl)
         {
             ARCL = arcl;
         }
