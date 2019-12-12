@@ -23,11 +23,24 @@ namespace ARCLQueue
         public ArclQueueManager(ARCLConnection arcl)
         {
             ARCL = arcl;
+        }
+
+        public void Start()
+        {
+            if (!ARCL.IsRunning)
+                ARCL.StartRecieveAsync();
+
             ARCL.QueueUpdateReceived += Robot_QueueUpdateReceived;
 
             Jobs = new Dictionary<string, QueueManagerJob>();
 
+            //Initiate the the load of the current queue
             QueueShow();
+        }
+
+        public void Stop()
+        {
+            ARCL.QueueUpdateReceived -= Robot_QueueUpdateReceived;
         }
 
         private void Robot_QueueUpdateReceived(object sender, QueueUpdateEventArgs que)
@@ -175,8 +188,7 @@ namespace ARCLQueue
             #endregion
 
         }
-
-
+        
         public bool QueueShow()
         {
             return ARCL.Write("QueueShow");

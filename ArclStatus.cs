@@ -19,7 +19,7 @@ namespace ARCL
         public delegate void DelayedEventHandler(DelayedEventArgs data);
         public event DelayedEventHandler Delayed;
 
-        private readonly ARCLConnection Robot;
+        private readonly ARCLConnection ARCL;
 
         private Stopwatch Stopwatch = new Stopwatch();
 
@@ -31,15 +31,17 @@ namespace ARCL
 
         private List<string> Devices = new List<string>();
 
-        public ArclStatus(ARCLConnection robot)
+        public ArclStatus(ARCLConnection arcl)
         {
-            Robot = robot;
+            ARCL = arcl;
         }
 
         public void Start(int updateRate, List<string> devices)
         {
-            Robot.StartRecieveAsync();
-            Robot.StatusDataReceived += Robot_StatusDataReceived;
+            if (!ARCL.IsRunning)
+                ARCL.StartRecieveAsync();
+
+            ARCL.StatusReceived += Robot_StatusReceived;
 
             UpdateRate = updateRate;
             Devices = devices;
@@ -47,7 +49,20 @@ namespace ARCL
             ThreadPool.QueueUserWorkItem(new WaitCallback(AsyncThread_DoWork));
         }
 
-        private void Robot_StatusDataReceived(object sender, StatusEventArgs data)
+        public void Start(int updateRate)
+        {
+            if (!ARCL.IsRunning)
+                ARCL.StartRecieveAsync();
+
+            ARCL.StatusReceived += Robot_StatusReceived;
+
+            UpdateRate = updateRate;
+            Devices = new List<string>();
+            IsRunning = true;
+            ThreadPool.QueueUserWorkItem(new WaitCallback(AsyncThread_DoWork));
+        }
+
+        private void Robot_StatusReceived(object sender, StatusEventArgs data)
         {
             Heartbeat = true;
             TTL = Stopwatch.ElapsedMilliseconds;
@@ -55,8 +70,7 @@ namespace ARCL
 
         public void Stop()
         {
-            Robot.StopRecieveAsync();
-            Robot.StatusDataReceived -= Robot_StatusDataReceived;
+            ARCL.StatusReceived -= Robot_StatusReceived;
 
             IsRunning = false;
             Thread.Sleep(UpdateRate + 100);
@@ -68,14 +82,14 @@ namespace ARCL
             {
                 if(!IsDelayed) Stopwatch.Reset();
 
-                Robot.Write("onelinestatus");
+                ARCL.Write("onelinestatus");
                 foreach (string l in Devices)
                 {
-                    Robot.Write("rangeDeviceGetCurrent " + l);
+                    ARCL.Write("rangeDeviceGetCurrent " + l);
                 }
                 foreach (string l in Devices)
                 {
-                    Robot.Write("rangeDeviceGetCumulative " + l);
+                    ARCL.Write("rangeDeviceGetCumulative " + l);
                 }
 
                 Heartbeat = false;

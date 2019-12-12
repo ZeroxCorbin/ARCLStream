@@ -20,17 +20,17 @@ namespace ARCL
         public delegate void QueueUpdateReceivedEventHandler(object sender, QueueUpdateEventArgs data);
         public event QueueUpdateReceivedEventHandler QueueUpdateReceived;
 
-        public delegate void StatusDataReceivedEventHandler(object sender, StatusEventArgs data);
-        public event StatusDataReceivedEventHandler StatusDataReceived;
+        public delegate void StatusReceivedEventHandler(object sender, StatusEventArgs data);
+        public event StatusReceivedEventHandler StatusReceived;
 
-        public delegate void RangeDeviceCurrentDataReceivedEventHandler(object sender, RangeDeviceEventArgs data);
-        public event RangeDeviceCurrentDataReceivedEventHandler RangeDeviceCurrentDataReceived;
+        public delegate void RangeDeviceCurrentReceivedEventHandler(object sender, RangeDeviceEventArgs data);
+        public event RangeDeviceCurrentReceivedEventHandler RangeDeviceCurrentReceived;
 
-        public delegate void RangeDeviceCumulativeDataReceivedEventHandler(object sender, RangeDeviceEventArgs data);
-        public event RangeDeviceCumulativeDataReceivedEventHandler RangeDeviceCumulativeDataReceived;
+        public delegate void RangeDeviceCumulativeReceivedEventHandler(object sender, RangeDeviceEventArgs data);
+        public event RangeDeviceCumulativeReceivedEventHandler RangeDeviceCumulativeReceived;
 
-        public delegate void ExtIODataReceivedEventHandler(object sender, ExtIOEventArgs data);
-        public event ExtIODataReceivedEventHandler ExtIODataReceived;
+        public delegate void ExtIOReceivedEventHandler(object sender, ExtIOEventArgs data);
+        public event ExtIOReceivedEventHandler ExtIOReceived;
 
         public string ConnectionString { get; private set; }
         public string IPAddress
@@ -61,11 +61,10 @@ namespace ARCL
         public int BufferSize { get; private set; } = 1024;
         public int SendTimeout { get; private set; } = 500;
         public int RecieveTimeout { get; private set; } = 500;
-
-        public bool IsConnected { get { return (Client != null) ? Client.Connected : false; } }
-
-        public bool IsRunning { get; private set; } = true;
         public int UpdateRate { get; private set; } = 50;
+        public bool IsConnected { get { return (Client != null) ? Client.Connected : false; } }
+        public bool IsRunning { get; private set; } = true;
+
 
         private delegate void ArclAsyncventHandler(object sender, ArclEventArgs data);
         private event ArclAsyncventHandler ArclAsyncDataReceived;
@@ -73,15 +72,12 @@ namespace ARCL
         private TcpClient Client;
         private NetworkStream ClientStream;
 
-        private object LockObject = new object();
-
         public ARCLConnection(string connectionString)
         {
             ConnectionString = connectionString;
         }
-
-
-        public string GenerateConnectionString(string ip, int port, string pass) => ip + ":" + port.ToString() + pass;
+               
+        public static string GenerateConnectionString(string ip, int port, string pass) => ip + ":" + port.ToString() + ":" + pass;
         public static bool ValidateConnectionString(string connectionString)
         {
             if (connectionString.Count(c => c == ':') != 2) return false;
@@ -185,6 +181,7 @@ namespace ARCL
             return true;
         }
 
+
         public void StartRecieveAsync(int rate = 20)
         {
             UpdateRate = rate;
@@ -200,243 +197,9 @@ namespace ARCL
             IsRunning = false;
             Thread.Sleep(UpdateRate + 100);
         }
-        private void AsyncRecieveThread_DoWork(object sender)
-        {
-            try
-            {
-                string msg;
-                while (IsRunning)
-                {
-                    msg = ReadMessage();
-                    if (msg.Length > 0)
-                        ArclAsyncDataReceived?.Invoke(this, new ArclEventArgs(msg));
-                    //Thread.Sleep(UpdateRate);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-            }
-        }
-        private void AsyncRecieveThread_ArclAsyncDataReceived(object sender, ArclEventArgs data)
-        {
-            string[] messages = MessageParse(data.Message);
 
-            ArclDataReceived?.Invoke(this, new ArclEventArgs(data.Message));
 
-            foreach (string message in messages)
-            {
-                if (message.StartsWith("queue", StringComparison.CurrentCultureIgnoreCase) && 
-                    !message.StartsWith("queuerobot", StringComparison.CurrentCultureIgnoreCase))
-                    QueueUpdateReceived?.Invoke(this, new QueueUpdateEventArgs(message));
-
-                if (message.StartsWith("extIOOutputUpdate") || message.Contains("extIOInputUpdate"))
-                    ExtIODataReceived?.Invoke(this, new ExtIOEventArgs(message));
-
-                if (message.StartsWith("Status:"))
-                    StatusDataReceived?.Invoke(this, new StatusEventArgs(message));
-
-                if (message.StartsWith("RangeDeviceGetCurrent:"))
-                    RangeDeviceCurrentDataReceived?.Invoke(this, new RangeDeviceEventArgs(message));
-
-                if (message.StartsWith("RangeDeviceGetCumulative:"))
-                    RangeDeviceCumulativeDataReceived?.Invoke(this, new RangeDeviceEventArgs(message));
-
-            }
-        }
-
-        public string Read()
-        {
-            int timeout = 45000; //ms
-            Stopwatch sw = new Stopwatch();
-            StringBuilder completeMessage = new System.Text.StringBuilder();
-
-            try
-            {
-                sw.Start();
-                lock (LockObject)
-                {
-                    if (ClientStream.CanRead && ClientStream.DataAvailable)
-                    {
-                        byte[] readBuffer = new byte[BufferSize];
-                        int numberOfBytesRead = 0;
-
-                        // Fill byte array with data from ARCL1 stream
-                        numberOfBytesRead = ClientStream.Read(readBuffer, 0, readBuffer.Length);
-
-                        // Convert the number of bytes received to a string and
-                        // concatenate to complete message
-                        completeMessage.AppendFormat("{0}", System.Text.Encoding.ASCII.GetString(readBuffer, 0, numberOfBytesRead));
-
-                        sw.Stop();
-                        if (sw.ElapsedMilliseconds >= timeout)
-                            throw new TimeoutException();
-                    }
-                }
-            }
-            catch (TimeoutException ex)
-            {
-                Console.WriteLine(ex);
-                throw;
-            }
-
-            return completeMessage.ToString();
-        }
-        public string Read(string endString)
-        {
-            int timeout = 45000; //ms
-            Stopwatch sw = new Stopwatch();
-            StringBuilder completeMessage = new System.Text.StringBuilder();
-
-            // Read until find the given string argument or hit timeout
-            sw.Start();
-            do
-            {
-                // Convert the number of bytes received to a string and
-                // concatenate to complete message
-                completeMessage.AppendFormat("{0}", Read());
-            }
-            while (!completeMessage.ToString().Contains(endString) &&
-                   !completeMessage.ToString().Contains("Unknown command") &&
-                   sw.ElapsedMilliseconds < timeout);
-            sw.Stop();
-
-            if (sw.ElapsedMilliseconds >= timeout)
-                throw new TimeoutException();
-
-            return completeMessage.ToString();
-        }
-        public string ReadLine()
-        {
-            int timeout = 45000; //ms
-            Stopwatch sw = new Stopwatch();
-            StringBuilder completeMessage = new System.Text.StringBuilder();
-            
-            try
-            {
-                sw.Start();
-                lock (LockObject)
-                {
-                    if (ClientStream.CanRead && ClientStream.DataAvailable)
-                    {
-                        char singleChar = (char)ClientStream.ReadByte();
-
-                        if(singleChar == '\n' || singleChar == '\f')
-                            return completeMessage.ToString();
-                        else if(singleChar != '\r')
-                            completeMessage.AppendFormat("{0}", singleChar.ToString());
-
-                        if (sw.ElapsedMilliseconds >= timeout)
-                            throw new TimeoutException();
-                    }
-                }
-            }
-            catch (TimeoutException ex)
-            {
-                Console.WriteLine(ex);
-                throw;
-            }
-
-            return completeMessage.ToString();
-        }
-        public string ReadMessage()
-        {
-            int timeout = 45000; //ms
-            Stopwatch sw = new Stopwatch();
-            StringBuilder completeMessage = new System.Text.StringBuilder();
-
-            sw.Start();
-            // Read until find the given string argument or hit timeout
-            do
-            {
-                // Convert the number of bytes received to a string and
-                // concatenate to complete message
-                completeMessage.AppendFormat("{0}", Read());
-                Thread.Sleep(5);
-            }
-            while (ClientStream.DataAvailable &&
-                   sw.ElapsedMilliseconds < timeout);
-            sw.Stop();
-
-            if (sw.ElapsedMilliseconds >= timeout)
-                throw new TimeoutException();
-
-            return completeMessage.ToString();
-        }
-
-        public string[] MessageParse(string message)
-        {
-            string[] messages = message.Split('\n','\r');
-
-            List<string> _messages = new List<string>();
-
-            foreach (string item in messages)
-            {
-                if (!String.IsNullOrEmpty(item))
-                {
-                    _messages.Add(item);
-                }
-            }
-            messages = _messages.ToArray();
-            return messages;
-        }
-
-        public bool Write(string msg)
-        {
-            byte[] buffer_ot = new byte[BufferSize];
-            msg += "\r\n";
-            try
-            {
-                lock (LockObject)
-                {
-                    StringToBytes(msg, ref buffer_ot);
-                    ClientStream.Write(buffer_ot, 0, buffer_ot.Length);
-                    bzero(buffer_ot);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-                return false;
-            }
-            return true;
-        }
-        public bool Write(string msg, int waitTime)
-        {
-            if (Write(msg))
-            {
-                Thread.Sleep(waitTime);
-                return true;
-            }
-            else
-                return false; ;
-        }
-
-        private void bzero(byte[] buff)
-        {
-            for (int i = 0; i < buff.Length; i++)
-            {
-                buff[i] = 0;
-            }
-        }
-        public byte[] StringToBytes(string msg)
-        {
-            byte[] buffer = new byte[msg.Length];
-            buffer = System.Text.ASCIIEncoding.ASCII.GetBytes(msg);
-            return buffer;
-        }
-        public void StringToBytes(string msg, ref byte[] buffer)
-        {
-            bzero(buffer);
-            buffer = System.Text.ASCIIEncoding.ASCII.GetBytes(msg);
-        }
-
-        public string BytesToString(byte[] buffer)
-        {
-            string msg = System.Text.ASCIIEncoding.ASCII.GetString(buffer, 0, buffer.Length);
-            return msg;
-        }
-
+        //ARCL Commands
         public void Log(string msg)
         {
             // Strip quotes
@@ -448,7 +211,6 @@ namespace ARCL
 
             Write("log \"" + msg + "\"");
         }
-
 
         public List<string> GetRangeDevices()
         {
@@ -688,7 +450,7 @@ namespace ARCL
         }
 
         public void Goto(string goalname) => this.Write($"goto {goalname}");
-        public void GotoPoint(int x, int y, int heading) => this.Write($"gotopoint {x} {y} {heading}");
+        public void GotoPoint(int x, int y, int heading) => this.Write($"gotopoint {x.ToString()} {y.ToString()} {heading.ToString()}");
         public void PatrolOnce(string routename) => this.Write($"patrolonce {routename}");
         public void Patrol(string routename) => this.Write($"patrol {routename}");
         public void Say(string message) => this.Write($"say {message}");
@@ -733,6 +495,245 @@ namespace ARCL
             string[] location = output[1].Split(new char[] { '\n', '\r' });
 
             return location[0].Trim();
+        }
+
+        //Mostly Worker and Helper routines. However, Read and Write can be accessed directly.
+        private object LockObject = new object();
+        private void AsyncRecieveThread_DoWork(object sender)
+        {
+            try
+            {
+                string msg;
+                while (IsRunning)
+                {
+                    msg = ReadMessage();
+                    if (msg.Length > 0)
+                        ArclAsyncDataReceived?.Invoke(this, new ArclEventArgs(msg));
+                    //Thread.Sleep(UpdateRate);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+        }
+        private void AsyncRecieveThread_ArclAsyncDataReceived(object sender, ArclEventArgs data)
+        {
+            string[] messages = MessageParse(data.Message);
+
+            ArclDataReceived?.Invoke(this, new ArclEventArgs(data.Message));
+
+            foreach (string message in messages)
+            {
+                if (message.StartsWith("queue", StringComparison.CurrentCultureIgnoreCase) &&
+                    !message.StartsWith("queuerobot", StringComparison.CurrentCultureIgnoreCase))
+                    QueueUpdateReceived?.Invoke(this, new QueueUpdateEventArgs(message));
+
+                if (message.StartsWith("extIOOutputUpdate") || message.Contains("extIOInputUpdate"))
+                    ExtIOReceived?.Invoke(this, new ExtIOEventArgs(message));
+
+                if (message.StartsWith("Status:"))
+                    StatusReceived?.Invoke(this, new StatusEventArgs(message));
+
+                if (message.StartsWith("RangeDeviceGetCurrent:"))
+                    RangeDeviceCurrentReceived?.Invoke(this, new RangeDeviceEventArgs(message));
+
+                if (message.StartsWith("RangeDeviceGetCumulative:"))
+                    RangeDeviceCumulativeReceived?.Invoke(this, new RangeDeviceEventArgs(message));
+
+            }
+        }
+
+        public string Read()
+        {
+            int timeout = 45000; //ms
+            Stopwatch sw = new Stopwatch();
+            StringBuilder completeMessage = new System.Text.StringBuilder();
+
+            try
+            {
+                sw.Start();
+                lock (LockObject)
+                {
+                    if (ClientStream.CanRead && ClientStream.DataAvailable)
+                    {
+                        byte[] readBuffer = new byte[BufferSize];
+                        int numberOfBytesRead = 0;
+
+                        // Fill byte array with data from ARCL1 stream
+                        numberOfBytesRead = ClientStream.Read(readBuffer, 0, readBuffer.Length);
+
+                        // Convert the number of bytes received to a string and
+                        // concatenate to complete message
+                        completeMessage.AppendFormat("{0}", System.Text.Encoding.ASCII.GetString(readBuffer, 0, numberOfBytesRead));
+
+                        sw.Stop();
+                        if (sw.ElapsedMilliseconds >= timeout)
+                            throw new TimeoutException();
+                    }
+                }
+            }
+            catch (TimeoutException ex)
+            {
+                Console.WriteLine(ex);
+                throw;
+            }
+
+            return completeMessage.ToString();
+        }
+        public string Read(string endString)
+        {
+            int timeout = 45000; //ms
+            Stopwatch sw = new Stopwatch();
+            StringBuilder completeMessage = new System.Text.StringBuilder();
+
+            // Read until find the given string argument or hit timeout
+            sw.Start();
+            do
+            {
+                // Convert the number of bytes received to a string and
+                // concatenate to complete message
+                completeMessage.AppendFormat("{0}", Read());
+            }
+            while (!completeMessage.ToString().Contains(endString) &&
+                   !completeMessage.ToString().Contains("Unknown command") &&
+                   sw.ElapsedMilliseconds < timeout);
+            sw.Stop();
+
+            if (sw.ElapsedMilliseconds >= timeout)
+                throw new TimeoutException();
+
+            return completeMessage.ToString();
+        }
+        public string ReadLine()
+        {
+            int timeout = 45000; //ms
+            Stopwatch sw = new Stopwatch();
+            StringBuilder completeMessage = new System.Text.StringBuilder();
+
+            try
+            {
+                sw.Start();
+                lock (LockObject)
+                {
+                    if (ClientStream.CanRead && ClientStream.DataAvailable)
+                    {
+                        char singleChar = (char)ClientStream.ReadByte();
+
+                        if (singleChar == '\n' || singleChar == '\f')
+                            return completeMessage.ToString();
+                        else if (singleChar != '\r')
+                            completeMessage.AppendFormat("{0}", singleChar.ToString());
+
+                        if (sw.ElapsedMilliseconds >= timeout)
+                            throw new TimeoutException();
+                    }
+                }
+            }
+            catch (TimeoutException ex)
+            {
+                Console.WriteLine(ex);
+                throw;
+            }
+
+            return completeMessage.ToString();
+        }
+        public string ReadMessage()
+        {
+            int timeout = 45000; //ms
+            Stopwatch sw = new Stopwatch();
+            StringBuilder completeMessage = new System.Text.StringBuilder();
+
+            sw.Start();
+            // Read until find the given string argument or hit timeout
+            do
+            {
+                // Convert the number of bytes received to a string and
+                // concatenate to complete message
+                completeMessage.AppendFormat("{0}", Read());
+                Thread.Sleep(5);
+            }
+            while (ClientStream.DataAvailable &&
+                   sw.ElapsedMilliseconds < timeout);
+            sw.Stop();
+
+            if (sw.ElapsedMilliseconds >= timeout)
+                throw new TimeoutException();
+
+            return completeMessage.ToString();
+        }
+
+        public string[] MessageParse(string message)
+        {
+            string[] messages = message.Split('\n', '\r');
+
+            List<string> _messages = new List<string>();
+
+            foreach (string item in messages)
+            {
+                if (!String.IsNullOrEmpty(item))
+                {
+                    _messages.Add(item);
+                }
+            }
+            messages = _messages.ToArray();
+            return messages;
+        }
+
+        public bool Write(string msg)
+        {
+            byte[] buffer_ot = new byte[BufferSize];
+            msg += "\r\n";
+            try
+            {
+                lock (LockObject)
+                {
+                    StringToBytes(msg, ref buffer_ot);
+                    ClientStream.Write(buffer_ot, 0, buffer_ot.Length);
+                    bzero(buffer_ot);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                return false;
+            }
+            return true;
+        }
+        public bool Write(string msg, int waitTime)
+        {
+            if (Write(msg))
+            {
+                Thread.Sleep(waitTime);
+                return true;
+            }
+            else
+                return false; ;
+        }
+
+        private void bzero(byte[] buff)
+        {
+            for (int i = 0; i < buff.Length; i++)
+            {
+                buff[i] = 0;
+            }
+        }
+        public byte[] StringToBytes(string msg)
+        {
+            byte[] buffer = new byte[msg.Length];
+            buffer = System.Text.ASCIIEncoding.ASCII.GetBytes(msg);
+            return buffer;
+        }
+        public void StringToBytes(string msg, ref byte[] buffer)
+        {
+            bzero(buffer);
+            buffer = System.Text.ASCIIEncoding.ASCII.GetBytes(msg);
+        }
+
+        public string BytesToString(byte[] buffer)
+        {
+            string msg = System.Text.ASCIIEncoding.ASCII.GetString(buffer, 0, buffer.Length);
+            return msg;
         }
 
         #region IDisposable Support
