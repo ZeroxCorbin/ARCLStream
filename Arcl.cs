@@ -63,7 +63,7 @@ namespace ARCL
         public int RecieveTimeout { get; private set; } = 500;
         public int UpdateRate { get; private set; } = 50;
         public bool IsConnected { get { return (Client != null) ? Client.Connected : false; } }
-        public bool IsRunning { get; private set; } = true;
+        public bool IsRunning { get; private set; } = false;
 
 
         private delegate void ARCLAsyncventHandler(object sender, ARCLEventArgs data);
@@ -107,7 +107,6 @@ namespace ARCL
                     if (!ConnectWithTimeout(3))
                         return false;
                 }
-
                     else
                         Client.Connect(IPAddress, Port);
 
@@ -380,71 +379,86 @@ namespace ARCL
         {
             List<string> SectionValues = new List<string>();
 
-            string rawMessage = null;
-            string fullMessage = "";
-            string lastMessage = "";
-            string[] messages;
-            Thread.Sleep(100);
-            this.ReadMessage();
-            this.Write(string.Format("getconfigsectionvalues {0}\r\n", section));
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            List<string> dev = new List<string>();
 
-            do
+            Write(string.Format("getconfigsectionvalues {0}\r\n", section));
+            System.Threading.Thread.Sleep(500);
+
+            string msg = ReadMessage();
+            string[] rawDevices = msg.Split('\r');
+
+            foreach (string s in rawDevices)
             {
-                while (String.IsNullOrEmpty(rawMessage))
+                if (s.IndexOf("GetConfigSectionValue:") >= 0)
                 {
-                    rawMessage = this.ReadLine();
-
-                    fullMessage = rawMessage;
-                    if (sw.ElapsedMilliseconds > 1000)
-                    {
-                        throw new TimeoutException();
-
-                    }
+                    SectionValues.Add(s.Split(':')[1].Trim());
                 }
-                sw.Restart();
+            }
 
-                if (rawMessage.Contains("CommandError"))
-                {
-                    Console.WriteLine("Config section \"{0}\" does not exist", section);
-                    rawMessage = "EndOfGetConfigSectionValues";
-                    fullMessage = rawMessage;
-                }
-                else
-                {
-                    while (!rawMessage.Contains("EndOfGetConfigSectionValues"))
-                    {
-                        rawMessage = this.ReadLine();
+            //string rawMessage = null;
+            //string fullMessage = "";
+            //string lastMessage = "";
+            //string[] messages;
+            //Thread.Sleep(100);
+            //this.ReadMessage();
+            //this.Write(string.Format("getconfigsectionvalues {0}\r\n", section));
+            //Stopwatch sw = new Stopwatch();
+            //sw.Start();
 
-                        if (!string.IsNullOrEmpty(rawMessage))
-                        {
-                            fullMessage += rawMessage;
-                        }
+            //do
+            //{
+            //    while (String.IsNullOrEmpty(rawMessage))
+            //    {
+            //        rawMessage = this.ReadLine();
 
-                    }
-                    sw.Stop();
-                }
+            //        fullMessage = rawMessage;
+            //        if (sw.ElapsedMilliseconds > 1000)
+            //        {
+            //            throw new TimeoutException();
+            //        }
+            //    }
+            //    sw.Restart();
 
-                messages = this.MessageParse(fullMessage);
+            //    if (rawMessage.Contains("CommandError"))
+            //    {
+            //        Console.WriteLine("Config section \"{0}\" does not exist", section);
+            //        rawMessage = "EndOfGetConfigSectionValues";
+            //        fullMessage = rawMessage;
+            //    }
+            //    else
+            //    {
+            //        while (!rawMessage.Contains("EndOfGetConfigSectionValues"))
+            //        {
+            //            rawMessage = this.ReadLine();
 
-                foreach (string message in messages)
-                {
-                    if (message.Contains("GetConfigSectionValue:"))
-                    {
-                        SectionValues.Add(message.Split(':')[1].Trim());
-                    }
-                    if (message.Contains("EndOfGetConfigSectionValues"))
-                    {
-                        lastMessage = message;
-                        break;
-                    }
-                    if (message.Contains("CommandErrorDescription: No section of name"))
-                    {
-                        lastMessage = "EndOfGetConfigSectionValues";
-                    }
-                }
-            } while (!lastMessage.Contains("EndOfGetConfigSectionValues"));
+            //            if (!string.IsNullOrEmpty(rawMessage))
+            //            {
+            //                fullMessage += rawMessage;
+            //            }
+
+            //        }
+            //        sw.Stop();
+            //    }
+
+            //    messages = this.MessageParse(fullMessage);
+
+            //    foreach (string message in messages)
+            //    {
+            //        if (message.Contains("GetConfigSectionValue:"))
+            //        {
+            //            SectionValues.Add(message.Split(':')[1].Trim());
+            //        }
+            //        if (message.Contains("EndOfGetConfigSectionValues"))
+            //        {
+            //            lastMessage = message;
+            //            break;
+            //        }
+            //        if (message.Contains("CommandErrorDescription: No section of name"))
+            //        {
+            //            lastMessage = "EndOfGetConfigSectionValues";
+            //        }
+            //    }
+            //} while (!lastMessage.Contains("EndOfGetConfigSectionValues"));
 
             return SectionValues;
         }
@@ -620,14 +634,13 @@ namespace ARCL
                     {
                         char singleChar = (char)ClientStream.ReadByte();
 
-                        if (singleChar == '\n' || singleChar == '\f')
+                        if (singleChar == '\n' | singleChar == '\f')
                             return completeMessage.ToString();
                         else if (singleChar != '\r')
                             completeMessage.AppendFormat("{0}", singleChar.ToString());
-
-                        if (sw.ElapsedMilliseconds >= timeout)
-                            throw new TimeoutException();
                     }
+                    if (sw.ElapsedMilliseconds >= timeout)
+                            throw new TimeoutException();
                 }
             }
             catch (TimeoutException ex)
