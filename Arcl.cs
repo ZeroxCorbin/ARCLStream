@@ -14,6 +14,12 @@ namespace ARCL
 {
     public class ARCLConnection : IDisposable
     {
+        public delegate void ConnectedEventHandler();
+        public event ConnectedEventHandler Connected;
+
+        public delegate void DisconnectedEventHandler();
+        public event DisconnectedEventHandler Disconnected;
+
         public delegate void ARCLDataReceivedEventHandler(object sender, ARCLEventArgs data);
         public event ARCLDataReceivedEventHandler ARCLDataReceived;
 
@@ -113,7 +119,10 @@ namespace ARCL
                 ClientStream = Client.GetStream();
 
                 if (Login())
+                {
+                    Connected?.Invoke();
                     return true;
+                }
                 else
                 {
                     Disconnect();
@@ -122,6 +131,7 @@ namespace ARCL
             }
             catch (Exception ex)
             {
+                Console.WriteLine(ex.Message);
                 return false;
             }
         }
@@ -156,7 +166,6 @@ namespace ARCL
 
             Write(Password);
             System.Threading.Thread.Sleep(RecieveTimeout);
-            string r = Read();
             string rm = ReadMessage();
 
             if (rm.EndsWith("End of commands\r\n")) return true;
@@ -165,6 +174,9 @@ namespace ARCL
         public bool Disconnect()
         {
             StopRecieveAsync();
+
+            Disconnected?.Invoke();
+
             try
             {
                 if (ClientStream != null)
@@ -175,6 +187,7 @@ namespace ARCL
             }
             catch (Exception ex)
             {
+                Console.WriteLine(ex.Message);
                 return false;
             }
             return true;
@@ -379,7 +392,7 @@ namespace ARCL
         {
             List<string> SectionValues = new List<string>();
 
-            List<string> dev = new List<string>();
+            //List<string> dev = new List<string>();
 
             Write(string.Format("getconfigsectionvalues {0}\r\n", section));
             System.Threading.Thread.Sleep(500);
@@ -479,7 +492,7 @@ namespace ARCL
             this.ReadMessage();
             this.Write("status");
             Thread.Sleep(25);
-            string status = "";
+            string status;
             do
             {
                 status = this.ReadMessage();
@@ -497,7 +510,7 @@ namespace ARCL
             this.ReadMessage();
             this.Write("status");
             Thread.Sleep(25);
-            string status = "";
+            string status;
             do
             {
                 status = this.ReadMessage();
@@ -512,7 +525,7 @@ namespace ARCL
         }
 
         //Mostly Worker and Helper routines. However, Read and Write can be accessed directly.
-        private object LockObject = new object();
+        private readonly object LockObject = new object();
         private void AsyncRecieveThread_DoWork(object sender)
         {
             try
@@ -703,7 +716,7 @@ namespace ARCL
                 {
                     StringToBytes(msg, ref buffer_ot);
                     ClientStream.Write(buffer_ot, 0, buffer_ot.Length);
-                    bzero(buffer_ot);
+                    Bzero(buffer_ot);
                 }
             }
             catch (Exception ex)
@@ -724,30 +737,22 @@ namespace ARCL
                 return false; ;
         }
 
-        private void bzero(byte[] buff)
+        private void Bzero(byte[] buff)
         {
             for (int i = 0; i < buff.Length; i++)
             {
                 buff[i] = 0;
             }
         }
-        public byte[] StringToBytes(string msg)
-        {
-            byte[] buffer = new byte[msg.Length];
-            buffer = System.Text.ASCIIEncoding.ASCII.GetBytes(msg);
-            return buffer;
-        }
+        public byte[] StringToBytes(string msg) => ASCIIEncoding.ASCII.GetBytes(msg);
+
         public void StringToBytes(string msg, ref byte[] buffer)
         {
-            bzero(buffer);
+            Bzero(buffer);
             buffer = System.Text.ASCIIEncoding.ASCII.GetBytes(msg);
         }
 
-        public string BytesToString(byte[] buffer)
-        {
-            string msg = System.Text.ASCIIEncoding.ASCII.GetString(buffer, 0, buffer.Length);
-            return msg;
-        }
+        public string BytesToString(byte[] buffer) => ASCIIEncoding.ASCII.GetString(buffer, 0, buffer.Length);
 
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
