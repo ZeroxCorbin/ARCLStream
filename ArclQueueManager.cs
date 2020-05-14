@@ -225,7 +225,7 @@ namespace ARCL
 
             ARCL.Write(msg.ToString());
 
-            return goals[0].JobID;
+            return id;
         }
 
 
