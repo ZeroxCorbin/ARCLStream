@@ -216,12 +216,12 @@ namespace ARCL
                 msg.Append(space);
             }
 
-            string id = GetNewJobID();
-            msg.Append(id);
+            //string id = GetNewJobID();
+            msg.Append(goals[0].JobID);
             
             ARCL.Write(msg.ToString());
 
-            return id;
+            return goals[0].JobID;
         }
 
 

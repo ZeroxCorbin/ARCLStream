@@ -44,7 +44,7 @@ namespace ARCL
 
         private bool Heartbeat = false;
 
-        private ARCLConnection ARCL;
+        private ARCLConnection ARCL { get; set; }
         public ARCLExtIO(ARCLConnection arcl)
         {
             ARCL = arcl;

@@ -567,7 +567,6 @@ namespace ARCL
 
                 if (message.StartsWith("RangeDeviceGetCumulative:"))
                     RangeDeviceCumulativeReceived?.Invoke(this, new RangeDeviceEventArgs(message));
-
             }
         }
 
