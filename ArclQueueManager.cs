@@ -216,9 +216,13 @@ namespace ARCL
                 msg.Append(space);
             }
 
-            //string id = GetNewJobID();
-            msg.Append(goals[0].JobID);
-            
+            string id;
+            if (goals[0].JobID == "")
+                id = GetNewJobID();
+            else
+                id = goals[0].JobID;
+            msg.Append(id);
+
             ARCL.Write(msg.ToString());
 
             return goals[0].JobID;
