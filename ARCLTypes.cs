@@ -15,15 +15,6 @@ namespace ARCLTypes
         }
     }
 
-    public class ARCLStreamEventArgs : EventArgs
-    {
-        public string Message { get; }
-        public ARCLStreamEventArgs(string msg)
-        {
-            Message = msg;
-        }
-    }
-
     //queueShow [echoString]
     //QueueRobot: <robotName> <robotStatus> <robotSubstatus> <echoString>
     //QueueRobot: "21" InProgress Driving ""
@@ -49,7 +40,6 @@ namespace ARCLTypes
     //             <robotName> <queued date> <queued time> <completed date = None > < completed time=None>
     //             <failed count>
 
-
     public enum QueueStatus
     {
         Pending,
@@ -66,9 +56,6 @@ namespace ARCLTypes
         Failed,
         Loading
     }
-
-    //ID_PICKUPxx<where PICKUPxx is the jobSegment ID for which this Job Segment is waiting>
-    //ID_DROPOFFxx <where DROPOFFxx is the jobSegment ID for which this Job Segment is waiting>
     public enum QueueSubStatus
     {
         None,
@@ -106,155 +93,7 @@ namespace ARCLTypes
         OutgoingARCLConnLost,
         ModeIsLocked,
         Cancelled_by_MobilePlanner
-    }
-
-
-    public class QueueUpdateParseException : Exception
-    {
-        public QueueUpdateParseException()
-        {
-        }
-
-        public QueueUpdateParseException(string message)
-            : base(message)
-        {
-        }
-    }
-
-
-
-
-    public class QueueManagerJob
-    {
-        public string ID { get; }
-        public int Priority
-        {
-            get
-            {
-                if (Goals.Count > 0)
-                    return Goals[0].Priority;
-                else
-                    return 0;
-            }
-        }
-
-        public int GoalCount
-        {
-            get
-            {
-                return _Goals.Count;
-            }
-        }
-
-        public QueueUpdateEventArgs CurrentGoal {
-            get
-            {
-                if (Goals.Count > 0)
-                {
-                    foreach (QueueUpdateEventArgs que in _Goals)
-                    {
-                        if (que.Status != QueueStatus.Completed)
-                            return que;
-                    }
-                    return _Goals[_Goals.Count - 1];
-                }
-                else
-                    return null;
-            }
-        }
-
-        private List<QueueUpdateEventArgs> _Goals = new List<QueueUpdateEventArgs>();
-        public List<QueueUpdateEventArgs> Goals
-        {
-            get
-            {
-                return _Goals;
-            }
-        }
-
-        public QueueStatus Status
-        {
-            get
-            {
-                if (Goals.Count > 0)
-                {
-                    foreach(QueueUpdateEventArgs que in _Goals)
-                    {
-                        if (que.Status != QueueStatus.Completed)
-                            return que.Status;
-                    }
-                    return QueueStatus.Completed;
-                }
-                else
-                    return QueueStatus.Loading;
-            }
-        }
-        public QueueSubStatus SubStatus {
-            get
-            {
-                if (Goals.Count > 0)
-                {
-                    foreach (QueueUpdateEventArgs que in _Goals)
-                    {
-                        if (que.Status != QueueStatus.Completed)
-                            return que.SubStatus;
-                    }
-                    return QueueSubStatus.None;
-                }
-                else
-                    return QueueSubStatus.None;
-            }
-        }
-        public DateTime StartedOn {
-            get
-            {
-                if (Goals.Count > 0)
-                    return _Goals[0].StartedOn;
-                else
-                    return new DateTime();
-            }
-        }
-        public DateTime CompletedOn {
-            get
-            {
-                if (Goals.Count > 0)
-                    return _Goals[_Goals.Count-1].CompletedOn;
-                else
-                    return new DateTime();
-            }
-        }
-
-        public QueueManagerJob(string id)
-        {
-            ID = id;
-        }
-
-        public QueueManagerJob(QueueUpdateEventArgs goal)
-        {
-            ID = goal.JobID;
-            AddQueAndSort(goal);
-        }
-
-        public void AddGoal(QueueUpdateEventArgs goal)
-        {
-            AddQueAndSort(goal);
-        }
-
-        private void AddQueAndSort(QueueUpdateEventArgs goal)
-        {
-            _Goals.Add(goal);
-            _Goals.Sort((foo1, foo2) => foo2.Order.CompareTo(foo1.Order));
-        }
-    }
-
-    public class JobDoneEventArgs : EventArgs
-    {
-        public QueueManagerJob Job { get; }
-        public JobDoneEventArgs(QueueManagerJob job)
-        {
-            Job = job;
-        }
-    }
+    } 
 
     public class QueueUpdateEventArgs : EventArgs
     {
@@ -286,6 +125,7 @@ namespace ARCLTypes
             Status = QueueStatus.Pending;
             SubStatus = QueueSubStatus.None;
         }
+
         public QueueUpdateEventArgs(string msg)
         {
             Message = msg;
@@ -433,52 +273,142 @@ namespace ARCLTypes
             }
         }
     }
-
-    public class RangeDeviceEventArgs : EventArgs
+    public class QueueManagerJob
     {
-        public bool IsCurrent { get; set; } = false;
-        public string Name { get; set; } = string.Empty;
-        public string Message { get; set; }
-        public List<float[]> Data { get; set; } = new List<float[]>();
-
-        public float Timestamp = 0;
-
-        public RangeDeviceEventArgs(string msg, bool isReplay = false)
+        public string ID { get; }
+        public int Priority
         {
-            Message = msg;
-            string[] rawData;
-
-            if (isReplay)
+            get
             {
-                string[] spl = msg.Split(',');
-                rawData = spl[2].Split();
-                Name = spl[1];
-
-                IsCurrent = true;
-
-                if (float.TryParse(spl[0], out float res))
-                    Timestamp = res;
+                if (Goals.Count > 0)
+                    return Goals[0].Priority;
+                else
+                    return 0;
             }
-            else
+        }
+
+        public int GoalCount
+        {
+            get
             {
-                rawData = msg.Split();
-                Name = rawData[1];
+                return Goals.Count;
             }
+        }
 
-            IsCurrent = rawData[0].Contains("RangeDeviceGetCurrent") ? true : false;
-
-            int i = 3;
-            for (; i < rawData.Length - 3; i += 3)
+        public QueueUpdateEventArgs CurrentGoal {
+            get
             {
-                float[] fl = new float[2];
-                fl[0] = float.Parse(rawData[i]);
-                fl[1] = float.Parse(rawData[i + 1]);
-                Data.Add(fl);
+                if (Goals.Count > 0)
+                {
+                    foreach (QueueUpdateEventArgs que in Goals)
+                    {
+                        if (que.Status != QueueStatus.Completed)
+                            return que;
+                    }
+                    return Goals[Goals.Count - 1];
+                }
+                else
+                    return null;
             }
+        }
+        public List<QueueUpdateEventArgs> Goals { get; private set; }
+
+        public QueueStatus Status
+        {
+            get
+            {
+                if (Goals.Count > 0)
+                {
+                    foreach(QueueUpdateEventArgs que in Goals)
+                    {
+                        if (que.Status != QueueStatus.Completed)
+                            return que.Status;
+                    }
+                    return QueueStatus.Completed;
+                }
+                else
+                    return QueueStatus.Loading;
+            }
+        }
+        public QueueSubStatus SubStatus {
+            get
+            {
+                if (Goals.Count > 0)
+                {
+                    foreach (QueueUpdateEventArgs que in Goals)
+                    {
+                        if (que.Status != QueueStatus.Completed)
+                            return que.SubStatus;
+                    }
+                    return QueueSubStatus.None;
+                }
+                else
+                    return QueueSubStatus.None;
+            }
+        }
+        public DateTime StartedOn {
+            get
+            {
+                if (Goals.Count > 0)
+                    return Goals[0].StartedOn;
+                else
+                    return new DateTime();
+            }
+        }
+        public DateTime CompletedOn {
+            get
+            {
+                if (Goals.Count > 0)
+                    return Goals[Goals.Count-1].CompletedOn;
+                else
+                    return new DateTime();
+            }
+        }
+
+        public QueueManagerJob(string id)
+        {
+            ID = id;
+        }
+
+        public QueueManagerJob(QueueUpdateEventArgs goal)
+        {
+            ID = goal.JobID;
+            AddQueAndSort(goal);
+        }
+
+        public void AddGoal(QueueUpdateEventArgs goal)
+        {
+            AddQueAndSort(goal);
+        }
+
+        private void AddQueAndSort(QueueUpdateEventArgs goal)
+        {
+            Goals.Add(goal);
+            Goals.Sort((foo1, foo2) => foo2.Order.CompareTo(foo1.Order));
+        }
+    }
+    public class QueueManagerJobCompleteEventArgs : EventArgs
+    {
+        public QueueManagerJob Job { get; }
+        public QueueManagerJobCompleteEventArgs(QueueManagerJob job)
+        {
+            Job = job;
+        }
+    }
+    public class QueueUpdateParseException : Exception
+    {
+        public QueueUpdateParseException()
+        {
+        }
+
+        public QueueUpdateParseException(string message)
+            : base(message)
+        {
         }
     }
 
-    public class StatusEventArgs : EventArgs
+
+    public class StatusUpdateEventArgs : EventArgs
     {
         public string Message { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
@@ -494,7 +424,7 @@ namespace ARCLTypes
 
         public float Timestamp { get; set; }
 
-        public StatusEventArgs(string msg, bool isReplay = false)
+        public StatusUpdateEventArgs(string msg, bool isReplay = false)
         {
             if (isReplay)
             {
@@ -527,7 +457,7 @@ namespace ARCLTypes
                 Message = msg;
                 string[] spl = msg.Split();
                 int i = 0;
-                float val = 0.0f;
+                float val;
 
                 while (true)
                 {
@@ -591,11 +521,62 @@ namespace ARCLTypes
 
         }
     }
+    public class StatusDelayedEventArgs : EventArgs
+    {
+        public bool Delayed = false;
+        public StatusDelayedEventArgs(bool delayed)
+        {
+            Delayed = delayed;
+        }
+    }
+    public class RangeDeviceUpdateEventArgs : EventArgs
+    {
+        public bool IsCurrent { get; set; } = false;
+        public string Name { get; set; } = string.Empty;
+        public string Message { get; set; }
+        public List<float[]> Data { get; set; } = new List<float[]>();
 
-    public class ExtIOEventArgs : EventArgs
+        public float Timestamp = 0;
+
+        public RangeDeviceUpdateEventArgs(string msg, bool isReplay = false)
+        {
+            Message = msg;
+            string[] rawData;
+
+            if (isReplay)
+            {
+                string[] spl = msg.Split(',');
+                rawData = spl[2].Split();
+                Name = spl[1];
+
+                IsCurrent = true;
+
+                if (float.TryParse(spl[0], out float res))
+                    Timestamp = res;
+            }
+            else
+            {
+                rawData = msg.Split();
+                Name = rawData[1];
+            }
+
+            IsCurrent = rawData[0].Contains("RangeDeviceGetCurrent");
+
+            int i = 3;
+            for (; i < rawData.Length - 3; i += 3)
+            {
+                float[] fl = new float[2];
+                fl[0] = float.Parse(rawData[i]);
+                fl[1] = float.Parse(rawData[i + 1]);
+                Data.Add(fl);
+            }
+        }
+    }
+
+    public class ExternalIOUpdateEventArgs : EventArgs
     {
         public string Message { get; }
-        public ExtIOEventArgs(string msg)
+        public ExternalIOUpdateEventArgs(string msg)
         {
             Message = msg;
         }

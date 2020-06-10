@@ -9,24 +9,28 @@ namespace ARCL
 {
     public class ARCLQueueManager
     {
-        private ARCLConnection ARCL;
+        //Public
+        public delegate void JobCompleteEventHandler(object sender, QueueUpdateEventArgs data);
+        public event JobCompleteEventHandler JobComplete;
 
-        public Dictionary<string, QueueManagerJob> Jobs;
+        //Public Read-only
+        public Dictionary<string, QueueManagerJob> Jobs { get; private set; }
 
-        public delegate void JobDoneEventHandler(object sender, QueueUpdateEventArgs data);
-        public event JobDoneEventHandler JobDone;
+        //Private
+        private ARCLConnection Connection { get; }
 
-        public ARCLQueueManager(ARCLConnection arcl)
+        //Public
+        public ARCLQueueManager(ARCLConnection connection)
         {
-            ARCL = arcl;
+            Connection = connection;
         }
 
         public void Start()
         {
-            if (!ARCL.IsRunning)
-                ARCL.StartRecieveAsync();
+            if (!Connection.IsAsyncReceiveRunning)
+                Connection.StartReceiveAsync();
 
-            ARCL.QueueUpdateReceived += Robot_QueueUpdateReceived;
+            Connection.QueueUpdate += Connection_QueueUpdate;
 
             Jobs = new Dictionary<string, QueueManagerJob>();
 
@@ -36,91 +40,35 @@ namespace ARCL
 
         public void Stop()
         {
-            ARCL.QueueUpdateReceived -= Robot_QueueUpdateReceived;
+            Connection.QueueUpdate -= Connection_QueueUpdate;
+            Connection.StopReceiveAsync();
         }
-
-        private void Robot_QueueUpdateReceived(object sender, QueueUpdateEventArgs que)
-        {
-
-            if (!Jobs.ContainsKey(que.JobID))
-            {
-                QueueManagerJob job = new QueueManagerJob(que);
-                Jobs.Add(job.ID, job);
-            }
-            else
-            {
-                int i = 0;
-                bool found = false;
-                foreach(QueueUpdateEventArgs currentQue in Jobs[que.JobID].Goals.ToList())
-                {
-                    if (currentQue.ID.Equals(que.ID))
-                    {
-                        Jobs[que.JobID].Goals[i] = que;
-                        found = true;
-                    }
-
-                    i++;
-                }
-                if(!found) Jobs[que.JobID].AddGoal(que);
-            }
-
-            if (Jobs[que.JobID].Status == QueueStatus.Completed || Jobs[que.JobID].Status == QueueStatus.Cancelled)
-                JobDone?.Invoke(new object(), que);
-        }
-
-
-        private string GetNewJobID()
-        {
-            string newID = RandomString(10, false);
-
-            while (Jobs.ContainsKey(newID))
-                newID = RandomString(10, false);
-
-            return newID;
-        }
-
-        private string RandomString(int size, bool lowerCase)
-        {
-            StringBuilder builder = new StringBuilder();
-            Random random = new Random();
-            char ch;
-            for (int i = 0; i < size; i++)
-            {
-                ch = Convert.ToChar(Convert.ToInt32(Math.Floor(26 * random.NextDouble() + 65)));
-                builder.Append(ch);
-            }
-            if (lowerCase)
-                return builder.ToString().ToLower();
-            return builder.ToString();
-        }
-
         public void QueueJob(string jobToQueue)
         {
             #region Variables
-            string msg = null;
-            string[] messages = null;
+            string msg;
+            string[] messages;
 
             Stopwatch timeout = new Stopwatch();
             int segmentCount = 0;
             #endregion
 
             //Clear out message buffer
-            ARCL.ReadMessage();
+            Connection.ReadMessage();
             //Write to the queue
-            ARCL.Write(jobToQueue);
+            Connection.Write(jobToQueue);
 
             #region Get ID and number of segments
             timeout.Start();
             while (timeout.ElapsedMilliseconds < 5000)
             {
-                msg = ARCL.Read();
-
+                msg = Connection.Read();
 
                 if (msg.Contains("QueueMulti:"))
                 {
                     if (!msg.Contains("EndQueueMulti"))
                     {
-                        msg += ARCL.Read("EndQueueMulti");
+                        msg += Connection.Read("EndQueueMulti");
                     }
 
                     timeout.Stop();
@@ -184,12 +132,6 @@ namespace ARCL
             #endregion
 
         }
-        
-        public bool QueueShow()
-        {
-            return ARCL.Write("QueueShow");
-        }
-
         public string QueueMulti(List<QueueUpdateEventArgs> goals)
         {
             StringBuilder msg = new StringBuilder();
@@ -223,17 +165,69 @@ namespace ARCL
                 id = goals[0].JobID;
             msg.Append(id);
 
-            ARCL.Write(msg.ToString());
+            Connection.Write(msg.ToString());
 
             return id;
-        }
+        }     
 
+        //Private
+        private bool QueueShow() => Connection.Write("QueueShow");
+        private void Connection_QueueUpdate(object sender, QueueUpdateEventArgs data)
+        {
+            if (!Jobs.ContainsKey(data.JobID))
+            {
+                QueueManagerJob job = new QueueManagerJob(data);
+                Jobs.Add(job.ID, job);
+            }
+            else
+            {
+                int i = 0;
+                bool found = false;
+                foreach(QueueUpdateEventArgs currentQue in Jobs[data.JobID].Goals.ToList())
+                {
+                    if (currentQue.ID.Equals(data.ID))
+                    {
+                        Jobs[data.JobID].Goals[i] = data;
+                        found = true;
+                    }
+
+                    i++;
+                }
+                if(!found) Jobs[data.JobID].AddGoal(data);
+            }
+
+            if (Jobs[data.JobID].Status == QueueStatus.Completed || Jobs[data.JobID].Status == QueueStatus.Cancelled)
+                JobComplete?.Invoke(new object(), data);            
+        }
+        private string GetNewJobID()
+        {
+            string newID = RandomString(10, false);
+
+            while (Jobs.ContainsKey(newID))
+                newID = RandomString(10, false);
+
+            return newID;
+        }
+        private string RandomString(int size, bool lowerCase)
+        {
+            StringBuilder builder = new StringBuilder();
+            Random random = new Random();
+            char ch;
+            for (int i = 0; i < size; i++)
+            {
+                ch = Convert.ToChar(Convert.ToInt32(Math.Floor(26 * random.NextDouble() + 65)));
+                builder.Append(ch);
+            }
+            if (lowerCase)
+                return builder.ToString().ToLower();
+            return builder.ToString();
+        }
 
         //public bool QueuePickup(string goal, out string o_jobid)
         //{
-        //    bool status = ARCL.Write("queuepickup " + goal);
+        //    bool status = Connection.Write("queuepickup " + goal);
         //    Thread.Sleep(500);
-        //    string result = ARCL.Read();
+        //    string result = Connection.Read();
 
         //    // Find the beginning of the message.
         //    int idx = result.IndexOf("queuepickup");
@@ -264,9 +258,9 @@ namespace ARCL
         //}
         //public bool QueuePickupDropoff(string goalPick, string goalDrop, out string o_jobid)
         //{
-        //    bool status = ARCL.Write("queuepickup " + goalPick);
+        //    bool status = Connection.Write("queuepickup " + goalPick);
         //    Thread.Sleep(500);
-        //    string result = ARCL.Read();
+        //    string result = Connection.Read();
 
         //    // Find the beginning of the message.
         //    int idx = result.IndexOf("queuepickup");
@@ -297,16 +291,16 @@ namespace ARCL
         //}
         //public bool QueueCancel(string jobID)
         //{
-        //    bool status = ARCL.Write("queuecancel jobid " + jobID);
+        //    bool status = Connection.Write("queuecancel jobid " + jobID);
         //    return status;
         //}
 
         //public bool QueueQuery(string jobID, out string o_status)
         //{
         //    string result = String.Empty;
-        //    bool status = ARCL.Write("queuequery jobID " + jobID);
+        //    bool status = Connection.Write("queuequery jobID " + jobID);
         //    Thread.Sleep(500);
-        //    result = ARCL.Read();
+        //    result = Connection.Read();
         //    o_status = result;
         //    return status;
         //}

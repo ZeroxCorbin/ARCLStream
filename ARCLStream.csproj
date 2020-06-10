@@ -53,10 +53,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Arcl.cs" />
-    <Compile Include="ArclQueueManager.cs" />
-    <Compile Include="ArclStatus.cs" />
-    <Compile Include="ArclIO.cs" />
+    <Compile Include="ARCLConnection.cs" />
+    <Compile Include="ARCLQueueManager.cs" />
+    <Compile Include="ARCLStatusManager.cs" />
+    <Compile Include="ARCLExternalIOManager.cs" />
+    <Compile Include="ARCLSychronousCommands.cs" />
     <Compile Include="ARCLTypes.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

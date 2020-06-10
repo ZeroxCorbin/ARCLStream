@@ -7,9 +7,9 @@ using ARCLTypes;
 
 namespace ARCL
 {
-    public class ARCLExtIO
+    public class ARCLExternalIOManager
     {
-        public delegate void ExtIOUpdateEventHandler(object sender, ExtIOEventArgs data);
+        public delegate void ExtIOUpdateEventHandler(object sender, ExternalIOUpdateEventArgs data);
         public event ExtIOUpdateEventHandler ExtIOUpdate;
 
         public class DelayedEventArgs : EventArgs
@@ -35,7 +35,7 @@ namespace ARCL
         public Dictionary<string, int> Count { get; private set; }
 
 
-        private Stopwatch Stopwatch = new Stopwatch();
+        private Stopwatch Stopwatch  { get; }= new Stopwatch();
 
         public int UpdateRate { get; private set; } = 50;
         public bool IsRunning { get; private set; } = false;
@@ -44,10 +44,10 @@ namespace ARCL
 
         private bool Heartbeat = false;
 
-        private ARCLConnection ARCL { get; set; }
-        public ARCLExtIO(ARCLConnection arcl)
+        private ARCLConnection Connection { get; set; }
+        public ARCLExternalIOManager(ARCLConnection connection)
         {
-            ARCL = arcl;
+            Connection = connection;
 
             List = new Dictionary<string, int>();
             Count = new Dictionary<string, int>();
@@ -55,29 +55,27 @@ namespace ARCL
 
         public void Start(int updateRate)
         {
-            if (!ARCL.IsRunning)
-                ARCL.StartRecieveAsync();
+            if (!Connection.IsAsyncReceiveRunning)
+                Connection.StartReceiveAsync();
 
-            ARCL.ExtIOReceived += ARCL_ExtIOReceived;
+            Connection.ExternalIOUpdate += Connection_ExternalIOUpdate;
 
             UpdateRate = updateRate;
             IsRunning = true;
             ThreadPool.QueueUserWorkItem(new WaitCallback(AsyncThread_DoWork));
         }
 
-        private void ARCL_ExtIOReceived(object sender, ExtIOEventArgs data)
+        private void Connection_ExternalIOUpdate(object sender, ExternalIOUpdateEventArgs data)
         {
-
-                if (data.Message.Contains("extIOOutputUpdate") || data.Message.Contains("extIOInputUpdate"))
-                {
-                    ExtIOUpdate?.Invoke(this, data);
-                }
-            
+            if (data.Message.Contains("extIOOutputUpdate") || data.Message.Contains("extIOInputUpdate"))
+            {
+                ExtIOUpdate?.Invoke(this, data);
+            }
         }
 
         public void Stop()
         {
-            ARCL.ExtIOReceived -= ARCL_ExtIOReceived;
+            Connection.ExternalIOUpdate -= Connection_ExternalIOUpdate;
 
             IsRunning = false;
             Thread.Sleep(UpdateRate + 100);
@@ -130,7 +128,7 @@ namespace ARCL
 
             int count = 0;
 
-            sectionValues = ARCL.GetConfigSectionValue("external digital inputs");
+            //sectionValues = Connection.GetConfigSectionValue("external digital inputs");
             foreach (string item in sectionValues)
             {
                 if (item.Contains(name + "_Input"))
@@ -155,7 +153,7 @@ namespace ARCL
             Thread.Sleep(100);
 
             count = 0;
-            sectionValues = ARCL.GetConfigSectionValue("external digital outputs");
+//sectionValues = Connection.GetConfigSectionValue("external digital outputs");
             foreach (string item in sectionValues)
             {
                 if (item.Contains(name + "_Output"))
@@ -189,14 +187,14 @@ namespace ARCL
         public bool CreateExtIO(string name, int numIn, int numOut)
         {
             bool success = false;
-            ARCL.Write("\r\n");
-            ARCL.ReadMessage();
-            ARCL.Write(string.Format("extioAdd {0} {1} {2}\r\n", name, numIn.ToString(), numOut.ToString()));
-            string message = ARCL.Read();
+            Connection.Write("\r\n");
+            Connection.ReadMessage();
+            Connection.Write(string.Format("extioAdd {0} {1} {2}\r\n", name, numIn.ToString(), numOut.ToString()));
+            string message = Connection.Read();
             int attempts = 0;
             while (String.IsNullOrEmpty(message))
             {
-                message = ARCL.Read();
+                message = Connection.Read();
                 if (attempts > 1000)
                 {
                     break;
@@ -236,29 +234,29 @@ namespace ARCL
         public void defaultExtIO(string name, int numIn, int numOut)
         {
             Console.WriteLine("Setting IO to defaults.");
-            ARCL.Write("configStart\r\n");
-            ARCL.Write("configAdd Section External Digital Inputs\r\n");
+            Connection.Write("configStart\r\n");
+            Connection.Write("configAdd Section External Digital Inputs\r\n");
             for (int i = 1; i <= numIn; i++)
             {
-                ARCL.Write("configAdd _beginList " + name + "_Input_" + i + "\r\n");
-                ARCL.Write("configAdd Alias " + name + "_i" + i + "\r\n");
-                ARCL.Write("configAdd _beginList OnList\r\n");
-                ARCL.Write("configAdd Count 1\r\n");
-                ARCL.Write("configAdd Type1 custom\r\n");
-                ARCL.Write("configAdd _endList OnList\r\n");
-                ARCL.Write("configAdd _endList " + name + "_Input_" + i + "\r\n");
+                Connection.Write("configAdd _beginList " + name + "_Input_" + i + "\r\n");
+                Connection.Write("configAdd Alias " + name + "_i" + i + "\r\n");
+                Connection.Write("configAdd _beginList OnList\r\n");
+                Connection.Write("configAdd Count 1\r\n");
+                Connection.Write("configAdd Type1 custom\r\n");
+                Connection.Write("configAdd _endList OnList\r\n");
+                Connection.Write("configAdd _endList " + name + "_Input_" + i + "\r\n");
             }
 
-            ARCL.Write("configAdd Section External Digital Outputs\r\n");
+            Connection.Write("configAdd Section External Digital Outputs\r\n");
             for (int o = 1; o <= numIn; o++)
             {
-                ARCL.Write("configAdd _beginList " + name + "_Output_" + o + "\r\n");
-                ARCL.Write("configAdd Alias " + name + "_o" + o + "\r\n");
-                ARCL.Write("configAdd Type1 custom\r\n");
-                ARCL.Write("configAdd _endList " + name + "_Output_" + o + "\r\n");
+                Connection.Write("configAdd _beginList " + name + "_Output_" + o + "\r\n");
+                Connection.Write("configAdd Alias " + name + "_o" + o + "\r\n");
+                Connection.Write("configAdd Type1 custom\r\n");
+                Connection.Write("configAdd _endList " + name + "_Output_" + o + "\r\n");
             }
 
-            ARCL.Write("configParse\r\n");
+            Connection.Write("configParse\r\n");
             Thread.Sleep(500);
 
         }
@@ -315,7 +313,7 @@ namespace ARCL
         {
             if (List[ioName + "_output"] != List[ioName + "_input"])
             {
-                ARCL.Write(string.Format("extioInputUpdate {0} {1}", ioName, List[ioName + "_output"]));
+                Connection.Write(string.Format("extioInputUpdate {0} {1}", ioName, List[ioName + "_output"]));
             }
         }
 
@@ -336,7 +334,7 @@ namespace ARCL
                 }
                 if (List[ioName + "_output"] != List[ioName + "_input"])
                 {
-                    ARCL.Write(string.Format("extioInputUpdate {0} {1}", ioName, List[ioName + "_output"]));
+                    Connection.Write(string.Format("extioInputUpdate {0} {1}", ioName, List[ioName + "_output"]));
                 }
 
                 Thread.Sleep(20);
@@ -356,7 +354,7 @@ namespace ARCL
 
             _value |= _valuePrev;
 
-            ARCL.Write(string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
+            Connection.Write(string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
         }
 
         /// <summary>
@@ -371,7 +369,7 @@ namespace ARCL
 
             int value = int.Parse(bit, System.Globalization.NumberStyles.AllowHexSpecifier);
 
-            ARCL.Write(string.Format("extioOutputUpdate {0} {1}\r\n", name, value));
+            Connection.Write(string.Format("extioOutputUpdate {0} {1}\r\n", name, value));
         }
 
         /// <summary>
@@ -389,7 +387,7 @@ namespace ARCL
             _value = ~value & 0xf;
             _value &= _valuePrev;
             Console.WriteLine("Writing: " + string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
-            ARCL.Write(string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
+            Connection.Write(string.Format("extIOOutputUpdate {0} {1}\r\n", output, _value));
 
         }
 
@@ -405,7 +403,7 @@ namespace ARCL
 
             _value |= _valuePrev;
 
-            ARCL.Write(string.Format("extIOInputUpdate {0} {1}\r\n", input, _value));
+            Connection.Write(string.Format("extIOInputUpdate {0} {1}\r\n", input, _value));
         }
 
         /// <summary>
@@ -423,7 +421,7 @@ namespace ARCL
             _value = ~value & 0xf;
             _value &= _valuePrev;
 
-            ARCL.Write(string.Format("extIOInputUpdate {0} {1}\r\n", input, _value));
+            Connection.Write(string.Format("extIOInputUpdate {0} {1}\r\n", input, _value));
         }
 
     }
