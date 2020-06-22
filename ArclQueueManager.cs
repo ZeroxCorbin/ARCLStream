@@ -20,15 +20,12 @@ namespace ARCL
         private ARCLConnection Connection { get; }
 
         //Public
-        public ARCLQueueManager(ARCLConnection connection)
-        {
-            Connection = connection;
-        }
+        public ARCLQueueManager(ARCLConnection connection)=>Connection = connection;
 
         public void Start()
         {
-            if (!Connection.IsAsyncReceiveRunning)
-                Connection.StartReceiveAsync();
+            if (!Connection.IsReceivingAsync)
+                Connection.ReceiveAsync();
 
             Connection.QueueUpdate += Connection_QueueUpdate;
 
@@ -37,12 +34,12 @@ namespace ARCL
             //Initiate the the load of the current queue
             QueueShow();
         }
-
         public void Stop()
         {
             Connection.QueueUpdate -= Connection_QueueUpdate;
             Connection.StopReceiveAsync();
         }
+
         public void QueueJob(string jobToQueue)
         {
             #region Variables
@@ -54,7 +51,7 @@ namespace ARCL
             #endregion
 
             //Clear out message buffer
-            Connection.ReadMessage();
+            Connection.Read();
             //Write to the queue
             Connection.Write(jobToQueue);
 

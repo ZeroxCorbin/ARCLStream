@@ -6,14 +6,6 @@ using System.Threading.Tasks;
 
 namespace ARCLTypes
 {
-    public class ARCLEventArgs : EventArgs
-    {
-        public string Message { get; }
-        public ARCLEventArgs(string msg)
-        {
-            Message = msg;
-        }
-    }
 
     //queueShow [echoString]
     //QueueRobot: <robotName> <robotStatus> <robotSubstatus> <echoString>
@@ -93,7 +85,7 @@ namespace ARCLTypes
         OutgoingARCLConnLost,
         ModeIsLocked,
         Cancelled_by_MobilePlanner
-    } 
+    }
 
     public class QueueUpdateEventArgs : EventArgs
     {
@@ -183,7 +175,7 @@ namespace ARCLTypes
             //QueueShow: <id> <jobId> <priority> <status> <substatus> Goal <"goalName"> <”robotName”>
             //           <queued date> <queued time> <completed date> <completed time> <echoString> <failed count>
             //QueueShow: PICKUP3 JOB3 10 Completed None Goal "1" "21" 11/14/2012 11:49:23 11/14/2012 11:49:23 "" 0
-            if (spl[0].StartsWith("QueueShow") || spl[0].StartsWith("QueueUpdate"))
+            if (spl[0].StartsWith("QueueShow", StringComparison.CurrentCultureIgnoreCase) || spl[0].StartsWith("QueueUpdate", StringComparison.CurrentCultureIgnoreCase))
             {
                 try
                 {
@@ -295,7 +287,8 @@ namespace ARCLTypes
             }
         }
 
-        public QueueUpdateEventArgs CurrentGoal {
+        public QueueUpdateEventArgs CurrentGoal
+        {
             get
             {
                 if (Goals.Count > 0)
@@ -319,7 +312,7 @@ namespace ARCLTypes
             {
                 if (Goals.Count > 0)
                 {
-                    foreach(QueueUpdateEventArgs que in Goals)
+                    foreach (QueueUpdateEventArgs que in Goals)
                     {
                         if (que.Status != QueueStatus.Completed)
                             return que.Status;
@@ -330,7 +323,8 @@ namespace ARCLTypes
                     return QueueStatus.Loading;
             }
         }
-        public QueueSubStatus SubStatus {
+        public QueueSubStatus SubStatus
+        {
             get
             {
                 if (Goals.Count > 0)
@@ -346,7 +340,8 @@ namespace ARCLTypes
                     return QueueSubStatus.None;
             }
         }
-        public DateTime StartedOn {
+        public DateTime StartedOn
+        {
             get
             {
                 if (Goals.Count > 0)
@@ -355,11 +350,12 @@ namespace ARCLTypes
                     return new DateTime();
             }
         }
-        public DateTime CompletedOn {
+        public DateTime CompletedOn
+        {
             get
             {
                 if (Goals.Count > 0)
-                    return Goals[Goals.Count-1].CompletedOn;
+                    return Goals[Goals.Count - 1].CompletedOn;
                 else
                     return new DateTime();
             }
@@ -573,12 +569,206 @@ namespace ARCLTypes
         }
     }
 
+    public class ExtIOUpdateParseException : Exception
+    {
+        public ExtIOUpdateParseException()
+        {
+        }
+
+        public ExtIOUpdateParseException(string message)
+            : base(message)
+        {
+        }
+    }
+
+
+    public class ExtIOSet
+    {
+        public string Name { get; private set; }
+        public List<byte> Inputs { get; private set; } = new List<byte>();
+        public List<byte> Outputs { get; private set; } = new List<byte>();
+
+        public int InputCount => Inputs.Count();
+        public int OutputCount => Outputs.Count();
+        public bool HasInputs => Inputs.Count() > 0;
+        public bool HasOutputs => Outputs.Count() > 0;
+        public bool IsDump => Inputs.Count() > 0 & Outputs.Count() > 0;
+        public bool IsEndDump { get; private set; }
+        public bool IsRemove => Inputs.Count() == 0 & Outputs.Count() == 0;
+
+        public bool AddedForPendingUpdate { get; set; }
+
+        public ExtIOSet(string name, List<byte> inputs, List<byte> outputs)
+        {
+            if (inputs == null) inputs = new List<byte>();
+            if (outputs == null) outputs = new List<byte>();
+
+            Name = name;
+            Inputs.AddRange(inputs);
+            Outputs.AddRange(outputs);
+        }
+        public ExtIOSet(bool isEndDump = false) => IsEndDump = isEndDump;
+
+        //<name> <valueInHexOrDec>
+        public string WriteInputCommand => $"extIOInputUpdate {Name} {BitConverter.ToUInt64(Inputs.ToArray(), 0):X}";
+        public string WriteOutputCommand => $"extIOOutputUpdate {Name} {BitConverter.ToUInt64(Outputs.ToArray(), 0):X}";
+    }
+
     public class ExternalIOUpdateEventArgs : EventArgs
     {
         public string Message { get; }
+        public ExtIOSet ExtIOSet { get; }
+
         public ExternalIOUpdateEventArgs(string msg)
         {
             Message = msg;
+
+            string[] spl = msg.Split(' ');
+
+            //ExtIODump: Test with 4 input(s), value = 0x0 and 4 output(s), value = 0x00
+            if (spl[0].StartsWith("extiodump", StringComparison.CurrentCultureIgnoreCase))
+            {
+                if (!spl[4].Contains("input")) throw new ExtIOUpdateParseException();
+                if (!spl[10].Contains("output")) throw new ExtIOUpdateParseException();
+
+                if (!int.TryParse(spl[3], out int num_in)) throw new ExtIOUpdateParseException();
+                if (!int.TryParse(spl[9], out int num_ot)) throw new ExtIOUpdateParseException();
+
+                if (!ulong.TryParse(CleanHexString(spl[7]), System.Globalization.NumberStyles.HexNumber, System.Globalization.NumberFormatInfo.InvariantInfo, out ulong val_in)) throw new ExtIOUpdateParseException();
+                if (!ulong.TryParse(CleanHexString(spl[13]), System.Globalization.NumberStyles.HexNumber, System.Globalization.NumberFormatInfo.InvariantInfo, out ulong val_ot)) throw new ExtIOUpdateParseException();
+
+                byte[] val8_in = BitConverter.GetBytes(val_in);
+                byte[] val8_ot = BitConverter.GetBytes(val_ot);
+
+                List<byte> input = new List<byte>();
+                for (int i = 0; i < (num_in + 8 - 1) / 8; i++)
+                    input.Add(val8_in[i]);
+
+                List<byte> output = new List<byte>();
+                for (int i = 0; i < (num_ot + 8 - 1) / 8; i++)
+                    output.Add(val8_ot[i]);
+
+                this.ExtIOSet = new ExtIOSet(spl[1].Trim(), input, output);
+
+                return;
+            }
+
+            //extIOInputUpdate: input <name> updated with <IO value in Hex> from <valueInDecOrHex> (asentered in ARCL)
+            if (spl[0].StartsWith("extIOInputUpdate", StringComparison.CurrentCultureIgnoreCase))
+            {
+                if (!spl[1].Contains("input")) throw new ExtIOUpdateParseException();
+
+                if (!ulong.TryParse(CleanHexString(spl[5]), System.Globalization.NumberStyles.HexNumber, System.Globalization.NumberFormatInfo.InvariantInfo, out ulong val_in)) throw new ExtIOUpdateParseException();
+
+                byte[] val8_in = BitConverter.GetBytes(val_in);
+
+                List<byte> input = new List<byte>();
+
+                foreach (byte b in val8_in)
+                    input.Add(b);
+
+                this.ExtIOSet = new ExtIOSet(spl[1].Trim(), input, null);
+
+                return;
+            }
+
+            if (spl[0].StartsWith("extIOOutputUpdate", StringComparison.CurrentCultureIgnoreCase))
+            {
+                if (!spl[1].Contains("output")) throw new ExtIOUpdateParseException();
+
+                if (!ulong.TryParse(CleanHexString(spl[5]), System.Globalization.NumberStyles.HexNumber, System.Globalization.NumberFormatInfo.InvariantInfo, out ulong val_out)) throw new ExtIOUpdateParseException();
+
+                byte[] val8_out = BitConverter.GetBytes(val_out);
+
+                List<byte> output = new List<byte>();
+
+                foreach (byte b in val8_out)
+                    output.Add(b);
+
+                this.ExtIOSet = new ExtIOSet(spl[1].Trim(), null, output);
+
+                return;
+            }
+
+            //extIORemove: <name> removed
+            if (spl[0].StartsWith("extIORemove", StringComparison.CurrentCultureIgnoreCase))
+            {
+                if (!spl[2].Contains("removed")) throw new ExtIOUpdateParseException();
+
+                this.ExtIOSet = new ExtIOSet(spl[1].Trim(), null, null);
+
+                return;
+            }
+
+            //EndExtIODump
+            if (spl[0].StartsWith("EndExtIODump", StringComparison.CurrentCultureIgnoreCase))
+            {
+                this.ExtIOSet = new ExtIOSet(true);
+
+                return;
+            }
+        }
+
+        private string CleanHexString(string str)
+        {
+            int pos = str.IndexOf('x');
+            if (pos == -1) return str;
+
+            return str.Remove(0, pos + 1);
+        }
+
+    }
+
+    public class ConfigSection
+    {
+        public string Name { get; private set; }
+        public string Value { get; private set; }
+        public string Other { get; private set; }
+        public ConfigSection(string name, string value, string other)
+        {
+            Name = name;
+            Value = value;
+            Other = other;
+        }
+    }
+
+    public class ConfigSectionUpdateEventArgs : EventArgs
+    {
+        public List<string> Message { get; private set; } = new List<string>();
+        public List<ConfigSection> Sections { get; private set; } = new List<ConfigSection>();
+
+        public bool EndOfConfig { get; private set; }
+        public ConfigSectionUpdateEventArgs(string msg)
+        {
+            if (msg.StartsWith("endof", StringComparison.CurrentCultureIgnoreCase))
+            {
+                EndOfConfig = true;
+                return;
+            }
+
+            string[] spl = msg.Split(' ');
+
+            string other = "";
+            for (int i = 3; i < spl.Length; i++)
+                other += " " + spl[i];
+
+            Sections.Add(new ConfigSection(spl[1], spl[2], other));
+        }
+        public void Update(string msg)
+        {
+            if (msg.StartsWith("endof", StringComparison.CurrentCultureIgnoreCase))
+            {
+                EndOfConfig = true;
+                return;
+            }
+
+            string[] spl = msg.Split(' ');
+
+            string other = "";
+            for (int i = 3; i < spl.Length; i++)
+                other += " " + spl[i];
+
+            Sections.Add(new ConfigSection(spl[1], spl[2], other));
         }
     }
 }

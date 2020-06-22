@@ -43,8 +43,8 @@ namespace ARCL
 
         public void Start(int updateRate, List<string> devices)
         {
-            if (!Connection.IsAsyncReceiveRunning)
-                Connection.StartReceiveAsync();
+            if (!Connection.IsReceivingAsync)
+                Connection.ReceiveAsync();
 
             UpdateRate = updateRate;
             Devices = devices;
@@ -67,8 +67,8 @@ namespace ARCL
 
         public void Start(int updateRate)
         {
-            if (!Connection.IsAsyncReceiveRunning)
-                Connection.StartReceiveAsync();
+            if (!Connection.IsReceivingAsync)
+                Connection.ReceiveAsync();
 
             UpdateRate = updateRate;
             Devices.Clear();
