@@ -19,8 +19,11 @@ namespace ARCL
         public delegate void ARCLConnectedEventHandler(object sender, SocketStateEventArgs data);
         public event ARCLConnectedEventHandler ARCLConnectState;
 
-        public delegate void QueueUpdateEventHandler(object sender, QueueUpdateEventArgs data);
-        public event QueueUpdateEventHandler QueueUpdate;
+        public delegate void QueueJobEventHandler(object sender, QueueJobUpdateEventArgs data);
+        public event QueueJobEventHandler QueueJobUpdate;
+
+        public delegate void QueueRobotUpdateEventHandler(object sender, QueueRobotUpdateEventArgs data);
+        public event QueueRobotUpdateEventHandler QueueRobotUpdate;
 
         public delegate void StatusUpdateEventHandler(object sender, StatusUpdateEventArgs data);
         public event StatusUpdateEventHandler StatusUpdate;
@@ -86,32 +89,55 @@ namespace ARCL
 
             foreach (string message in messages)
             {
-                if (message.StartsWith("Queue", StringComparison.CurrentCultureIgnoreCase) &
-                    !message.StartsWith("QueueRobot", StringComparison.CurrentCultureIgnoreCase))
-                    QueueUpdate?.BeginInvoke(this, new QueueUpdateEventArgs(message), null, null);
+                if ((message.StartsWith("Queue", StringComparison.CurrentCultureIgnoreCase) | message.StartsWith("EndQueue", StringComparison.CurrentCultureIgnoreCase)) & !message.Contains("Robot"))
+                {
+                    QueueJobUpdate?.BeginInvoke(this, new QueueJobUpdateEventArgs(message), null, null);
+                    continue;
+                }
 
-                if (message.StartsWith("extio", StringComparison.CurrentCultureIgnoreCase) | message.StartsWith("endextio", StringComparison.CurrentCultureIgnoreCase))
+                if ((message.StartsWith("Queue", StringComparison.CurrentCultureIgnoreCase) | message.StartsWith("EndQueue", StringComparison.CurrentCultureIgnoreCase)) & message.Contains("Robot"))
+                {
+                    QueueRobotUpdate?.BeginInvoke(this, new QueueRobotUpdateEventArgs(message), null, null);
+                    continue;
+                }
+
+                if (message.StartsWith("ExtIO", StringComparison.CurrentCultureIgnoreCase) | message.StartsWith("EndExtIO", StringComparison.CurrentCultureIgnoreCase))
+                {
                     ExternalIOUpdate?.BeginInvoke(this, new ExternalIOUpdateEventArgs(message), null, null);
+                    continue;
+                }
 
                 if (message.StartsWith("getconfigsection", StringComparison.CurrentCultureIgnoreCase) | message.StartsWith("endofgetconfigsection", StringComparison.CurrentCultureIgnoreCase))
                 {
-                    if (NewConfigSection.EndOfConfig)
+                    if (NewConfigSection.IsEnd)
                         NewConfigSection = new ConfigSectionUpdateEventArgs(message);
                     else
                         NewConfigSection.Update(message);
 
-                    if (NewConfigSection.EndOfConfig)
-                        ConfigSectionUpdate?.Invoke(this, NewConfigSection);
+                    if (NewConfigSection.IsEnd)
+                        ConfigSectionUpdate?.BeginInvoke(this, NewConfigSection, null, null);
+
+                    continue;
                 }
-                    
+
                 if (message.StartsWith("Status:"))
-                    StatusUpdate?.Invoke(this, new StatusUpdateEventArgs(message));
+                {
+                    StatusUpdate?.BeginInvoke(this, new StatusUpdateEventArgs(message), null, null);
+                    continue;
+                }
 
                 if (message.StartsWith("RangeDeviceGetCurrent:"))
+                {
                     RangeDeviceCurrentUpdate?.BeginInvoke(this, new RangeDeviceUpdateEventArgs(message), null, null);
+                    continue;
+                }
 
                 if (message.StartsWith("RangeDeviceGetCumulative:"))
+                {
                     RangeDeviceCumulativeUpdate?.BeginInvoke(this, new RangeDeviceUpdateEventArgs(message), null, null);
+                    continue;
+                }
+
             }
         }
     }

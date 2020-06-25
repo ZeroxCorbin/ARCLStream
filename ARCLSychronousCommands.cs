@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 
-namespace ARCLStream
+namespace ARCL
 {
     public class ARCLSychronousCommands : ARCLConnection
     {

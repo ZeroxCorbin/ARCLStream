@@ -54,7 +54,8 @@
   <ItemGroup>
     <Compile Include="ARCLConfigManager.cs" />
     <Compile Include="ARCLConnection.cs" />
-    <Compile Include="ARCLQueueManager.cs" />
+    <Compile Include="ARCLQueueRobotManager.cs" />
+    <Compile Include="ARCLQueueJobManager.cs" />
     <Compile Include="ARCLStatusManager.cs" />
     <Compile Include="ARCLExternalIOManager.cs" />
     <Compile Include="ARCLSychronousCommands.cs" />

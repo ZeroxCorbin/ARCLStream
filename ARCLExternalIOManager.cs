@@ -59,6 +59,10 @@ namespace ARCL
         }
         public void Stop()
         {
+            if (IsSynced)
+                InSync?.BeginInvoke(this, false, null, null);
+            IsSynced = false;
+
             Connection.ExternalIOUpdate -= Connection_ExternalIOUpdate;
             Connection?.StopReceiveAsync();
         }
@@ -92,7 +96,7 @@ namespace ARCL
 
             if (data.ExtIOSet == null) return;
 
-            if (data.ExtIOSet.IsEndDump)
+            if (data.ExtIOSet.IsEnd)
                 SyncDesiredExtIO();
 
             if (data.ExtIOSet.IsDump)
@@ -112,10 +116,8 @@ namespace ARCL
             if (DesiredExtIOSets.Count() == 0)
             {
                 if (!IsSynced)
-                {
-                    IsSynced = true;
                     InSync?.BeginInvoke(this, true, null, null);
-                }
+                IsSynced = true;
                 return;
             }
 
@@ -132,12 +134,9 @@ namespace ARCL
             else
             {
                 if (!IsSynced)
-                {
-                    IsSynced = true;
                     InSync?.BeginInvoke(this, true, null, null);
-                }
+                IsSynced = true;
             }
-
         }
     }
 }

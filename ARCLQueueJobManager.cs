@@ -7,36 +7,54 @@ using ARCLTypes;
 
 namespace ARCL
 {
-    public class ARCLQueueManager
+    public class ARCLQueueJobManager
     {
         //Public
-        public delegate void JobCompleteEventHandler(object sender, QueueUpdateEventArgs data);
+        public delegate void JobCompleteEventHandler(object sender, QueueJobUpdateEventArgs data);
         public event JobCompleteEventHandler JobComplete;
 
-        //Public Read-only
+        /// <summary>
+        /// Fires when the Jobs list is sycronized with the EM/LD job queue.
+        /// </summary>
+        public delegate void InSyncUpdateEventHandler(object sender, bool data);
+        public event InSyncUpdateEventHandler InSync;
+
+        /// <summary>
+        /// True when the Jobs list is sycronized with the EM/LD job queue.
+        /// </summary>
+        public bool IsSynced { get; private set; } = false;
         public Dictionary<string, QueueManagerJob> Jobs { get; private set; }
+
 
         //Private
         private ARCLConnection Connection { get; }
 
         //Public
-        public ARCLQueueManager(ARCLConnection connection)=>Connection = connection;
+        public ARCLQueueJobManager(ARCLConnection connection) => Connection = connection;
 
+        /// <summary>
+        /// Starts the QueueManager.
+        /// This will clear and reload the Jobs list.
+        /// Stop() must be called before Nulling QM or callling Start() again.
+        /// </summary>
         public void Start()
         {
             if (!Connection.IsReceivingAsync)
                 Connection.ReceiveAsync();
 
-            Connection.QueueUpdate += Connection_QueueUpdate;
+            Connection.QueueJobUpdate += Connection_QueueJobUpdate;
 
             Jobs = new Dictionary<string, QueueManagerJob>();
 
             //Initiate the the load of the current queue
             QueueShow();
         }
+        /// <summary>
+        /// 
+        /// </summary>
         public void Stop()
         {
-            Connection.QueueUpdate -= Connection_QueueUpdate;
+            Connection.QueueJobUpdate -= Connection_QueueJobUpdate;
             Connection.StopReceiveAsync();
         }
 
@@ -129,7 +147,7 @@ namespace ARCL
             #endregion
 
         }
-        public string QueueMulti(List<QueueUpdateEventArgs> goals)
+        public string QueueMulti(List<QueueJobUpdateEventArgs> goals)
         {
             StringBuilder msg = new StringBuilder();
             string space = " ";
@@ -143,12 +161,12 @@ namespace ARCL
             msg.Append("2");
             msg.Append(space);
 
-            foreach(QueueUpdateEventArgs g in goals)
+            foreach (QueueJobUpdateEventArgs g in goals)
             {
                 msg.Append(g.GoalName);
                 msg.Append(space);
 
-                msg.Append(Enum.GetName(typeof(QueueUpdateEventArgs.GoalTypes), g.GoalType));
+                msg.Append(Enum.GetName(typeof(QueueJobUpdateEventArgs.GoalTypes), g.GoalType));
                 msg.Append(space);
 
                 msg.Append(g.Priority.ToString());
@@ -165,12 +183,19 @@ namespace ARCL
             Connection.Write(msg.ToString());
 
             return id;
-        }     
+        }
 
         //Private
         private bool QueueShow() => Connection.Write("QueueShow");
-        private void Connection_QueueUpdate(object sender, QueueUpdateEventArgs data)
+        private void Connection_QueueJobUpdate(object sender, QueueJobUpdateEventArgs data)
         {
+            if (data.IsEnd & !IsSynced)
+            {
+                IsSynced = true;
+                InSync?.BeginInvoke(this, true, null, null);
+                return;
+            }
+
             if (!Jobs.ContainsKey(data.JobID))
             {
                 QueueManagerJob job = new QueueManagerJob(data);
@@ -180,7 +205,7 @@ namespace ARCL
             {
                 int i = 0;
                 bool found = false;
-                foreach(QueueUpdateEventArgs currentQue in Jobs[data.JobID].Goals.ToList())
+                foreach (QueueJobUpdateEventArgs currentQue in Jobs[data.JobID].Goals.ToList())
                 {
                     if (currentQue.ID.Equals(data.ID))
                     {
@@ -190,11 +215,11 @@ namespace ARCL
 
                     i++;
                 }
-                if(!found) Jobs[data.JobID].AddGoal(data);
+                if (!found) Jobs[data.JobID].AddGoal(data);
             }
 
-            if (Jobs[data.JobID].Status == QueueStatus.Completed || Jobs[data.JobID].Status == QueueStatus.Cancelled)
-                JobComplete?.Invoke(new object(), data);            
+            if (Jobs[data.JobID].Status == ARCLStatus.Completed || Jobs[data.JobID].Status == ARCLStatus.Cancelled)
+                JobComplete?.Invoke(new object(), data);
         }
         private string GetNewJobID()
         {

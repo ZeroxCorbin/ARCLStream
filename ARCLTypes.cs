@@ -32,7 +32,7 @@ namespace ARCLTypes
     //             <robotName> <queued date> <queued time> <completed date = None > < completed time=None>
     //             <failed count>
 
-    public enum QueueStatus
+    public enum ARCLStatus
     {
         Pending,
         Available,
@@ -48,7 +48,7 @@ namespace ARCLTypes
         Failed,
         Loading
     }
-    public enum QueueSubStatus
+    public enum ARCLSubStatus
     {
         None,
         AssignedRobotOffLine,
@@ -87,7 +87,7 @@ namespace ARCLTypes
         Cancelled_by_MobilePlanner
     }
 
-    public class QueueUpdateEventArgs : EventArgs
+    public class QueueJobUpdateEventArgs : EventArgs
     {
         public enum GoalTypes
         {
@@ -101,31 +101,39 @@ namespace ARCLTypes
         public int Order { get; }
         public string JobID { get; }
         public int Priority { get; }
-        public QueueStatus Status { get; }
-        public QueueSubStatus SubStatus { get; }
+        public ARCLStatus Status { get; }
+        public ARCLSubStatus SubStatus { get; }
         public string GoalName { get; }
         public string RobotName { get; }
         public DateTime StartedOn { get; }
         public DateTime CompletedOn { get; }
         public int FailCount { get; }
-        public QueueUpdateEventArgs(string goalName, GoalTypes goalType, int priority = 10)
+        public bool IsEnd { get; }
+
+        public QueueJobUpdateEventArgs(string goalName, GoalTypes goalType, int priority = 10)
         {
             GoalName = goalName;
             Priority = priority;
             GoalType = goalType;
 
-            Status = QueueStatus.Pending;
-            SubStatus = QueueSubStatus.None;
+            Status = ARCLStatus.Pending;
+            SubStatus = ARCLSubStatus.None;
         }
 
-        public QueueUpdateEventArgs(string msg)
+        public QueueJobUpdateEventArgs(string msg)
         {
             Message = msg;
 
             string[] spl = msg.Split(' ');
 
-            //QueueMulti: goal "Goal1" with priority 10 id PICKUP12 and job_id OWBQYSXSGZ successfully queued
-            if (spl[0].StartsWith("queuemulti", StringComparison.CurrentCultureIgnoreCase))
+            if (spl[0].StartsWith("EndQueueShow", StringComparison.CurrentCultureIgnoreCase))
+            {
+                IsEnd = true;
+                return;
+            }
+
+                //QueueMulti: goal "Goal1" with priority 10 id PICKUP12 and job_id OWBQYSXSGZ successfully queued
+                if (spl[0].StartsWith("queuemulti", StringComparison.CurrentCultureIgnoreCase))
             {
                 try
                 {
@@ -170,6 +178,8 @@ namespace ARCLTypes
                 {
 
                 }
+
+                return;
             }
 
             //QueueShow: <id> <jobId> <priority> <status> <substatus> Goal <"goalName"> <”robotName”>
@@ -213,14 +223,14 @@ namespace ARCLTypes
                     else
                         throw new QueueUpdateParseException();
 
-                    if (Enum.TryParse(spl[4], out QueueStatus status))
+                    if (Enum.TryParse(spl[4], out ARCLStatus status))
                         Status = status;
                     else
                         throw new QueueUpdateParseException();
 
                     if (!spl[5].StartsWith("ID_"))
                     {
-                        if (Enum.TryParse(spl[5], out QueueSubStatus subStatus))
+                        if (Enum.TryParse(spl[5], out ARCLSubStatus subStatus))
                             SubStatus = subStatus;
                         else
                             throw new QueueUpdateParseException();
@@ -262,7 +272,20 @@ namespace ARCLTypes
                 {
 
                 }
+                return;
             }
+        }
+
+    } 
+    public class QueueUpdateParseException : Exception
+    {
+        public QueueUpdateParseException()
+        {
+        }
+
+        public QueueUpdateParseException(string message)
+            : base(message)
+        {
         }
     }
     public class QueueManagerJob
@@ -279,23 +302,17 @@ namespace ARCLTypes
             }
         }
 
-        public int GoalCount
-        {
-            get
-            {
-                return Goals.Count;
-            }
-        }
+        public int GoalCount => Goals.Count;
 
-        public QueueUpdateEventArgs CurrentGoal
+        public QueueJobUpdateEventArgs CurrentGoal
         {
             get
             {
                 if (Goals.Count > 0)
                 {
-                    foreach (QueueUpdateEventArgs que in Goals)
+                    foreach (QueueJobUpdateEventArgs que in Goals)
                     {
-                        if (que.Status != QueueStatus.Completed)
+                        if (que.Status != ARCLStatus.Completed)
                             return que;
                     }
                     return Goals[Goals.Count - 1];
@@ -304,40 +321,40 @@ namespace ARCLTypes
                     return null;
             }
         }
-        public List<QueueUpdateEventArgs> Goals { get; private set; }
+        public List<QueueJobUpdateEventArgs> Goals { get; private set; }
 
-        public QueueStatus Status
+        public ARCLStatus Status
         {
             get
             {
                 if (Goals.Count > 0)
                 {
-                    foreach (QueueUpdateEventArgs que in Goals)
+                    foreach (QueueJobUpdateEventArgs que in Goals)
                     {
-                        if (que.Status != QueueStatus.Completed)
+                        if (que.Status != ARCLStatus.Completed)
                             return que.Status;
                     }
-                    return QueueStatus.Completed;
+                    return ARCLStatus.Completed;
                 }
                 else
-                    return QueueStatus.Loading;
+                    return ARCLStatus.Loading;
             }
         }
-        public QueueSubStatus SubStatus
+        public ARCLSubStatus SubStatus
         {
             get
             {
                 if (Goals.Count > 0)
                 {
-                    foreach (QueueUpdateEventArgs que in Goals)
+                    foreach (QueueJobUpdateEventArgs que in Goals)
                     {
-                        if (que.Status != QueueStatus.Completed)
+                        if (que.Status != ARCLStatus.Completed)
                             return que.SubStatus;
                     }
-                    return QueueSubStatus.None;
+                    return ARCLSubStatus.None;
                 }
                 else
-                    return QueueSubStatus.None;
+                    return ARCLSubStatus.None;
             }
         }
         public DateTime StartedOn
@@ -361,23 +378,16 @@ namespace ARCLTypes
             }
         }
 
-        public QueueManagerJob(string id)
-        {
-            ID = id;
-        }
+        public QueueManagerJob(string id) => ID = id;
 
-        public QueueManagerJob(QueueUpdateEventArgs goal)
+        public QueueManagerJob(QueueJobUpdateEventArgs goal)
         {
             ID = goal.JobID;
             AddQueAndSort(goal);
         }
 
-        public void AddGoal(QueueUpdateEventArgs goal)
-        {
-            AddQueAndSort(goal);
-        }
-
-        private void AddQueAndSort(QueueUpdateEventArgs goal)
+        public void AddGoal(QueueJobUpdateEventArgs goal) => AddQueAndSort(goal);
+        private void AddQueAndSort(QueueJobUpdateEventArgs goal)
         {
             Goals.Add(goal);
             Goals.Sort((foo1, foo2) => foo2.Order.CompareTo(foo1.Order));
@@ -391,19 +401,51 @@ namespace ARCLTypes
             Job = job;
         }
     }
-    public class QueueUpdateParseException : Exception
-    {
-        public QueueUpdateParseException()
-        {
-        }
 
-        public QueueUpdateParseException(string message)
-            : base(message)
+
+    public class QueueRobotUpdateEventArgs : EventArgs
+    {
+        //QueueRobot: "robotName" robotStatus robotSubstatus echoString
+        public string Message { get; private set; }
+        public string Name { get; private set; }
+        public ARCLStatus Status { get; private set; }
+        public ARCLSubStatus SubStatus { get; private set; }
+        public bool IsEnd { get; private set; }
+        public QueueRobotUpdateEventArgs(string msg)
         {
+            if (msg.StartsWith("EndQueue", StringComparison.CurrentCultureIgnoreCase))
+            {
+                IsEnd = true;
+                return;
+            }
+
+            Message = msg;
+
+            string[] spl = msg.Split(' ');
+
+            Name = spl[1].Trim('\"');
+
+            if (Enum.TryParse(spl[2], out ARCLStatus status))
+                Status = status;
+            else
+                throw new QueueRobotParseException();
+
+            if (Enum.TryParse(spl[3], out ARCLSubStatus subStatus))
+                SubStatus = subStatus;
+            else
+                throw new QueueRobotParseException();
         }
     }
 
-
+    public class QueueRobotParseException : Exception
+    {
+        public QueueRobotParseException()
+        {
+        }
+        public QueueRobotParseException(string message) : base(message)
+        {
+        }
+    }
     public class StatusUpdateEventArgs : EventArgs
     {
         public string Message { get; set; } = string.Empty;
@@ -593,7 +635,7 @@ namespace ARCLTypes
         public bool HasInputs => Inputs.Count() > 0;
         public bool HasOutputs => Outputs.Count() > 0;
         public bool IsDump => Inputs.Count() > 0 & Outputs.Count() > 0;
-        public bool IsEndDump { get; private set; }
+        public bool IsEnd { get; private set; }
         public bool IsRemove => Inputs.Count() == 0 & Outputs.Count() == 0;
 
         public bool AddedForPendingUpdate { get; set; }
@@ -607,7 +649,7 @@ namespace ARCLTypes
             Inputs.AddRange(inputs);
             Outputs.AddRange(outputs);
         }
-        public ExtIOSet(bool isEndDump = false) => IsEndDump = isEndDump;
+        public ExtIOSet(bool isEnd = false) => IsEnd = isEnd;
 
         //<name> <valueInHexOrDec>
         public string WriteInputCommand => $"extIOInputUpdate {Name} {BitConverter.ToUInt64(Inputs.ToArray(), 0):X}";
@@ -737,12 +779,12 @@ namespace ARCLTypes
         public List<string> Message { get; private set; } = new List<string>();
         public List<ConfigSection> Sections { get; private set; } = new List<ConfigSection>();
 
-        public bool EndOfConfig { get; private set; }
+        public bool IsEnd { get; private set; }
         public ConfigSectionUpdateEventArgs(string msg)
         {
             if (msg.StartsWith("endof", StringComparison.CurrentCultureIgnoreCase))
             {
-                EndOfConfig = true;
+                IsEnd = true;
                 return;
             }
 
@@ -758,7 +800,7 @@ namespace ARCLTypes
         {
             if (msg.StartsWith("endof", StringComparison.CurrentCultureIgnoreCase))
             {
-                EndOfConfig = true;
+                IsEnd = true;
                 return;
             }
 
