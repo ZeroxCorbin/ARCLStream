@@ -10,15 +10,6 @@ namespace ARCL
 {
     public class ARCLExternalIOManager
     {
-        public delegate void ExtIOUpdateEventHandler(object sender, ExternalIOUpdateEventArgs data);
-        public event ExtIOUpdateEventHandler ExtIOUpdate;
-
-        public delegate void InputUpdateEventHandler(object sender, ExternalIOUpdateEventArgs data);
-        public event InputUpdateEventHandler InputUpdate;
-
-        public delegate void OutputUpdateEventHandler(object sender, ExternalIOUpdateEventArgs data);
-        public event OutputUpdateEventHandler OutputUpdate;
-
         public delegate void InSyncUpdateEventHandler(object sender, bool data);
         public event InSyncUpdateEventHandler InSync;
 
@@ -68,14 +59,22 @@ namespace ARCL
         }
 
         public bool UpdateAllIO() => Dump();
-        public bool WriteAllInputs()
+        public bool WriteAllInputs(List<byte> inputs)
         {
             if (!IsSynced) return false;
 
-            foreach (KeyValuePair<string, ExtIOSet> set in _ActiveExtIOSets)
-                Connection.Write(set.Value.WriteInputCommand);
+            if (inputs.Count() < _ActiveExtIOSets.Count()) return false;
 
-            return true;
+            int i = 0;
+            bool res = false;
+            foreach (KeyValuePair<string, ExtIOSet> set in _ActiveExtIOSets)
+            {
+                set.Value.Inputs = new List<byte> { inputs[i++] };
+                set.Value.AddedForPendingUpdate = true;
+                res &= Connection.Write(set.Value.WriteInputCommand);
+            }
+
+            return res ^= true;
         }
         public bool WriteAllOutputs_Uncommon()
         {
@@ -92,12 +91,13 @@ namespace ARCL
 
         private void Connection_ExternalIOUpdate(object sender, ExternalIOUpdateEventArgs data)
         {
-            ExtIOUpdate?.Invoke(this, data);
-
             if (data.ExtIOSet == null) return;
 
             if (data.ExtIOSet.IsEnd)
+            {
                 SyncDesiredExtIO();
+                return;
+            }
 
             if (data.ExtIOSet.IsDump)
             {
@@ -108,6 +108,31 @@ namespace ARCL
                     else
                         _ActiveExtIOSets.Add(data.ExtIOSet.Name, data.ExtIOSet);
                 }
+
+                return;
+            }
+
+            if (data.ExtIOSet.HasInputs)
+            {
+                bool isSync = false;
+                lock (ActiveLockObject)
+                {
+                    if (_ActiveExtIOSets.ContainsKey(data.ExtIOSet.Name))
+                    {
+                        _ActiveExtIOSets[data.ExtIOSet.Name].Inputs = data.ExtIOSet.Inputs;
+                        _ActiveExtIOSets[data.ExtIOSet.Name].AddedForPendingUpdate = false;
+                    }
+                    else
+                        isSync = true;
+                }
+
+                foreach (KeyValuePair<string, ExtIOSet> set in _ActiveExtIOSets)
+                    isSync |= set.Value.AddedForPendingUpdate;
+
+                if(!isSync)
+                    InSync?.BeginInvoke(this, true, null, null);
+
+                return;
             }
         }
 
@@ -121,22 +146,48 @@ namespace ARCL
                 return;
             }
 
-            foreach (KeyValuePair<string, ExtIOSet> set in _ActiveExtIOSets)
+            foreach (KeyValuePair<string, ExtIOSet> set in DesiredExtIOSets)
             {
-                if (DesiredExtIOSets.ContainsKey(set.Key)) continue;
-                else InProcessExtIOSets.Add(set.Key, set.Value);
+                if (_ActiveExtIOSets.ContainsKey(set.Key))
+                {
+                    if (InProcessExtIOSets.ContainsKey(set.Key))
+                        InProcessExtIOSets.Remove(set.Key);
+                    continue;
+                }
+                else
+                {
+                    if (!InProcessExtIOSets.ContainsKey(set.Key))
+                        InProcessExtIOSets.Add(set.Key, set.Value);
+                }
             }
 
             if (InProcessExtIOSets.Count() > 0)
-            {
-
-            }
+                CreateIO();
             else
             {
                 if (!IsSynced)
                     InSync?.BeginInvoke(this, true, null, null);
                 IsSynced = true;
             }
+        }
+
+        private void CreateIO()
+        {
+            foreach(KeyValuePair<string, ExtIOSet> set in InProcessExtIOSets)
+            {
+                if (set.Value.AddedForPendingUpdate) continue;
+                else
+                    Connection.Write(set.Value.CreateSetCommand);
+            }
+
+            ThreadPool.QueueUserWorkItem(new WaitCallback(CreateIOWaitThread));
+        }
+
+        private void CreateIOWaitThread(object sender)
+        {
+            Thread.Sleep(10000);
+
+            Dump();
         }
     }
 }

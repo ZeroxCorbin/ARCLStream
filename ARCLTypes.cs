@@ -627,11 +627,11 @@ namespace ARCLTypes
     public class ExtIOSet
     {
         public string Name { get; private set; }
-        public List<byte> Inputs { get; private set; } = new List<byte>();
-        public List<byte> Outputs { get; private set; } = new List<byte>();
+        public List<byte> Inputs { get; set; } = new List<byte>();
+        public List<byte> Outputs { get; set; } = new List<byte>();
 
-        public int InputCount => Inputs.Count();
-        public int OutputCount => Outputs.Count();
+        public int InputCount => Inputs.Count() * 8;
+        public int OutputCount => Outputs.Count() * 8;
         public bool HasInputs => Inputs.Count() > 0;
         public bool HasOutputs => Outputs.Count() > 0;
         public bool IsDump => Inputs.Count() > 0 & Outputs.Count() > 0;
@@ -652,8 +652,24 @@ namespace ARCLTypes
         public ExtIOSet(bool isEnd = false) => IsEnd = isEnd;
 
         //<name> <valueInHexOrDec>
-        public string WriteInputCommand => $"extIOInputUpdate {Name} {BitConverter.ToUInt64(Inputs.ToArray(), 0):X}";
-        public string WriteOutputCommand => $"extIOOutputUpdate {Name} {BitConverter.ToUInt64(Outputs.ToArray(), 0):X}";
+        public string WriteInputCommand
+        {
+            get
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("extIOInputUpdate ");
+                sb.Append(Name);
+                sb.Append(" 0x");
+
+                for (int i = Inputs.Count() - 1; i >= 0; i--)
+                    sb.Append(Inputs[i].ToString("X"));
+
+                return sb.ToString();
+            }
+            
+        }
+        public string WriteOutputCommand => $"extIOOutputUpdate {Name} {Inputs[0]:X}";
+        public string CreateSetCommand => $"extIOAdd {Name} {InputCount} {OutputCount}";
     }
 
     public class ExternalIOUpdateEventArgs : EventArgs
@@ -676,19 +692,29 @@ namespace ARCLTypes
                 if (!int.TryParse(spl[3], out int num_in)) throw new ExtIOUpdateParseException();
                 if (!int.TryParse(spl[9], out int num_ot)) throw new ExtIOUpdateParseException();
 
-                if (!ulong.TryParse(CleanHexString(spl[7]), System.Globalization.NumberStyles.HexNumber, System.Globalization.NumberFormatInfo.InvariantInfo, out ulong val_in)) throw new ExtIOUpdateParseException();
-                if (!ulong.TryParse(CleanHexString(spl[13]), System.Globalization.NumberStyles.HexNumber, System.Globalization.NumberFormatInfo.InvariantInfo, out ulong val_ot)) throw new ExtIOUpdateParseException();
-
-                byte[] val8_in = BitConverter.GetBytes(val_in);
-                byte[] val8_ot = BitConverter.GetBytes(val_ot);
-
                 List<byte> input = new List<byte>();
-                for (int i = 0; i < (num_in + 8 - 1) / 8; i++)
-                    input.Add(val8_in[i]);
+                string txt = CleanHexString(spl[7]);
+                for (int i =0;i< num_in / 8; i++)
+                {
+                    if (txt.Length < 2)
+                        txt = txt.PadLeft(2, '0');
+                    else
+                        txt = txt.Substring(i, 2);
+                    input.Add(byte.Parse(txt, System.Globalization.NumberStyles.HexNumber));
+
+                }
+                    
 
                 List<byte> output = new List<byte>();
-                for (int i = 0; i < (num_ot + 8 - 1) / 8; i++)
-                    output.Add(val8_ot[i]);
+                txt = CleanHexString(spl[7]);
+                for (int i = 0; i < num_ot / 8; i++)
+                {
+                    if (txt.Length < 2)
+                        txt = txt.PadLeft(2, '0');
+                    else
+                        txt = txt.Substring(i, 2);
+                    output.Add(byte.Parse(txt, System.Globalization.NumberStyles.HexNumber));
+                }
 
                 this.ExtIOSet = new ExtIOSet(spl[1].Trim(), input, output);
 
@@ -700,16 +726,14 @@ namespace ARCLTypes
             {
                 if (!spl[1].Contains("input")) throw new ExtIOUpdateParseException();
 
-                if (!ulong.TryParse(CleanHexString(spl[5]), System.Globalization.NumberStyles.HexNumber, System.Globalization.NumberFormatInfo.InvariantInfo, out ulong val_in)) throw new ExtIOUpdateParseException();
-
-                byte[] val8_in = BitConverter.GetBytes(val_in);
+                int cnt = (spl[7].Count() - 2) / 2;
 
                 List<byte> input = new List<byte>();
+                string txt = CleanHexString(spl[5]);
+                for (int i = 0; i < cnt; i++)
+                    input.Add(byte.Parse(txt.Substring(i, 2), System.Globalization.NumberStyles.HexNumber));
 
-                foreach (byte b in val8_in)
-                    input.Add(b);
-
-                this.ExtIOSet = new ExtIOSet(spl[1].Trim(), input, null);
+                this.ExtIOSet = new ExtIOSet(spl[2].Trim(), input, null);
 
                 return;
             }
@@ -727,7 +751,7 @@ namespace ARCLTypes
                 foreach (byte b in val8_out)
                     output.Add(b);
 
-                this.ExtIOSet = new ExtIOSet(spl[1].Trim(), null, output);
+                this.ExtIOSet = new ExtIOSet(spl[2].Trim(), null, output);
 
                 return;
             }
