@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -10,32 +11,32 @@ namespace ARCL
 {
     public class ARCLExternalIOManager
     {
-        public delegate void InSyncUpdateEventHandler(object sender, bool data);
-        public event InSyncUpdateEventHandler InSync;
-
-
-        private readonly Dictionary<string, ExtIOSet> _ActiveExtIOSets = new Dictionary<string, ExtIOSet>();
-        public Dictionary<string, ExtIOSet> ActiveExtIOSets
-        {
-            get
-            {
-                lock (ActiveLockObject)
-                    return _ActiveExtIOSets;
-            }
-        }
-        private Dictionary<string, ExtIOSet> DesiredExtIOSets { get; }
-        private Dictionary<string, ExtIOSet> InProcessExtIOSets { get; set; } = new Dictionary<string, ExtIOSet>();
-
+        /// <summary>
+        /// Raised when the External IO is sycronized with the EM.
+        /// </summary>
+        public delegate void InSyncEventHandler(object sender, bool state);
+        public event InSyncEventHandler InSync;
+        /// <summary>
+        /// True when the External IO is sycronized with the EM.
+        /// </summary>
         public bool IsSynced { get; private set; } = false;
 
+
+        private readonly Dictionary<string, ExtIOSet> _ActiveSets = new Dictionary<string, ExtIOSet>();
+        public ReadOnlyDictionary<string, ExtIOSet> ActiveSets { get { lock (ActiveSetsLock) return new ReadOnlyDictionary<string, ExtIOSet>(_ActiveSets); } }
+        private object ActiveSetsLock { get; } = new object();
+
+        public ReadOnlyDictionary<string, ExtIOSet> DesiredSets { get; }
+        private Dictionary<string, ExtIOSet> InProcessSets { get; set; } = new Dictionary<string, ExtIOSet>();
+
         private ARCLConnection Connection { get; set; }
-        private object ActiveLockObject { get; } = new object();
-        public ARCLExternalIOManager(ARCLConnection connection, Dictionary<string, ExtIOSet> desiredExtIOSets)
+
+        public ARCLExternalIOManager(ARCLConnection connection, Dictionary<string, ExtIOSet> desiredSets)
         {
             Connection = connection;
 
-            if (desiredExtIOSets == null) DesiredExtIOSets = new Dictionary<string, ExtIOSet>();
-            else DesiredExtIOSets = desiredExtIOSets;
+            if (desiredSets == null) DesiredSets = new ReadOnlyDictionary<string, ExtIOSet>(new Dictionary<string, ExtIOSet>());
+            else DesiredSets = new ReadOnlyDictionary<string, ExtIOSet>(desiredSets);
         }
 
         public void Start()
@@ -63,11 +64,11 @@ namespace ARCL
         {
             if (!IsSynced) return false;
 
-            if (inputs.Count() < _ActiveExtIOSets.Count()) return false;
+            if (inputs.Count() < _ActiveSets.Count()) return false;
 
             int i = 0;
             bool res = false;
-            foreach (KeyValuePair<string, ExtIOSet> set in _ActiveExtIOSets)
+            foreach (KeyValuePair<string, ExtIOSet> set in _ActiveSets)
             {
                 set.Value.Inputs = new List<byte> { inputs[i++] };
                 set.Value.AddedForPendingUpdate = true;
@@ -81,7 +82,7 @@ namespace ARCL
             if (!IsSynced) return false;
 
             bool result = false;
-            foreach (KeyValuePair<string, ExtIOSet> set in _ActiveExtIOSets)
+            foreach (KeyValuePair<string, ExtIOSet> set in _ActiveSets)
                 result |= Connection.Write(set.Value.WriteOutputCommand);
 
             return result;
@@ -95,18 +96,18 @@ namespace ARCL
 
             if (data.ExtIOSet.IsEnd)
             {
-                SyncDesiredExtIO();
+                SyncDesiredSets();
                 return;
             }
 
             if (data.ExtIOSet.IsDump)
             {
-                lock (ActiveLockObject)
+                lock (ActiveSetsLock)
                 {
-                    if (_ActiveExtIOSets.ContainsKey(data.ExtIOSet.Name))
-                        _ActiveExtIOSets[data.ExtIOSet.Name] = data.ExtIOSet;
+                    if (_ActiveSets.ContainsKey(data.ExtIOSet.Name))
+                        _ActiveSets[data.ExtIOSet.Name] = data.ExtIOSet;
                     else
-                        _ActiveExtIOSets.Add(data.ExtIOSet.Name, data.ExtIOSet);
+                        _ActiveSets.Add(data.ExtIOSet.Name, data.ExtIOSet);
                 }
 
                 return;
@@ -115,30 +116,30 @@ namespace ARCL
             if (data.ExtIOSet.HasInputs)
             {
                 bool isSync = false;
-                lock (ActiveLockObject)
+                lock (ActiveSetsLock)
                 {
-                    if (_ActiveExtIOSets.ContainsKey(data.ExtIOSet.Name))
+                    if (_ActiveSets.ContainsKey(data.ExtIOSet.Name))
                     {
-                        _ActiveExtIOSets[data.ExtIOSet.Name].Inputs = data.ExtIOSet.Inputs;
-                        _ActiveExtIOSets[data.ExtIOSet.Name].AddedForPendingUpdate = false;
+                        _ActiveSets[data.ExtIOSet.Name].Inputs = data.ExtIOSet.Inputs;
+                        _ActiveSets[data.ExtIOSet.Name].AddedForPendingUpdate = false;
                     }
                     else
                         isSync = true;
                 }
 
-                foreach (KeyValuePair<string, ExtIOSet> set in _ActiveExtIOSets)
+                foreach (KeyValuePair<string, ExtIOSet> set in _ActiveSets)
                     isSync |= set.Value.AddedForPendingUpdate;
 
-                if(!isSync)
+                if (!isSync)
                     InSync?.BeginInvoke(this, true, null, null);
 
                 return;
             }
         }
 
-        private void SyncDesiredExtIO()
+        private void SyncDesiredSets()
         {
-            if (DesiredExtIOSets.Count() == 0)
+            if (DesiredSets.Count() == 0)
             {
                 if (!IsSynced)
                     InSync?.BeginInvoke(this, true, null, null);
@@ -146,23 +147,23 @@ namespace ARCL
                 return;
             }
 
-            foreach (KeyValuePair<string, ExtIOSet> set in DesiredExtIOSets)
+            foreach (KeyValuePair<string, ExtIOSet> set in DesiredSets)
             {
-                if (_ActiveExtIOSets.ContainsKey(set.Key))
+                if (_ActiveSets.ContainsKey(set.Key))
                 {
-                    if (InProcessExtIOSets.ContainsKey(set.Key))
-                        InProcessExtIOSets.Remove(set.Key);
+                    if (InProcessSets.ContainsKey(set.Key))
+                        InProcessSets.Remove(set.Key);
                     continue;
                 }
                 else
                 {
-                    if (!InProcessExtIOSets.ContainsKey(set.Key))
-                        InProcessExtIOSets.Add(set.Key, set.Value);
+                    if (!InProcessSets.ContainsKey(set.Key))
+                        InProcessSets.Add(set.Key, set.Value);
                 }
             }
 
-            if (InProcessExtIOSets.Count() > 0)
-                CreateIO();
+            if (InProcessSets.Count() > 0)
+                AddSets();
             else
             {
                 if (!IsSynced)
@@ -171,9 +172,9 @@ namespace ARCL
             }
         }
 
-        private void CreateIO()
+        private void AddSets()
         {
-            foreach(KeyValuePair<string, ExtIOSet> set in InProcessExtIOSets)
+            foreach (KeyValuePair<string, ExtIOSet> set in InProcessSets)
             {
                 if (set.Value.AddedForPendingUpdate) continue;
                 else

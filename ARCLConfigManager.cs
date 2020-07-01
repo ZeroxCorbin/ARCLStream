@@ -2,6 +2,7 @@
 using ARCLTypes;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -10,19 +11,23 @@ namespace ARCL
 {
     public class ARCLConfigManager
     {
-        public class ConfigManagerUpdateEventArgs : EventArgs
-        {
-            public string SectionName { get; private set; }
-            public ConfigManagerUpdateEventArgs(string sectionName) => SectionName = sectionName;
-        }
         //Public
-        public delegate void ConfigManagerUpdateEventHandler(object sender, ConfigManagerUpdateEventArgs data);
-        public event ConfigManagerUpdateEventHandler ConfigManagerUpdate;
+        /// <summary>
+        /// Raised when the config Section is sycronized with the EM.
+        /// </summary>
+        public delegate void InSyncEventHandler(object sender, string sectionName);
+        public event InSyncEventHandler InSync;
+        /// <summary>
+        /// True when the config Section is sycronized with the EM.
+        /// </summary>
+        public bool IsSynced { get; private set; } = false;
 
         private ARCLConnection Connection { get; set; }
         public ARCLConfigManager(ARCLConnection connection) => Connection = connection;
 
-        public Dictionary<string, List<ConfigSection>> Sections { get; private set; }
+        private Dictionary<string, List<ConfigSection>> _Sections { get; set; }
+        public ReadOnlyDictionary<string, List<ConfigSection>> Sections { get { lock (SectionsLockObject) return new ReadOnlyDictionary<string, List<ConfigSection>>(_Sections); } }
+        private object SectionsLockObject { get; set; } = new object();
 
         public void Start()
         {
@@ -40,26 +45,31 @@ namespace ARCL
         private string SectionName { get; set; } = null;
         public bool GetConfigSectionValues(string sectionName)
         {
-            if (Sections.ContainsKey(sectionName))
-                Sections[sectionName].Clear();
+            IsSynced = false;
+
+            if (_Sections.ContainsKey(sectionName))
+                _Sections[sectionName].Clear();
             else
-                Sections.Add(sectionName, new List<ConfigSection>());
+                _Sections.Add(sectionName, new List<ConfigSection>());
 
             SectionName = sectionName;
 
-            if (Connection.Write(string.Format("getconfigsectionvalues {0}\r\n", sectionName)))
-                return true;
-            else
-                return false;
+            return Connection.Write($"getconfigsectionvalues {sectionName}\r\n");
         }
 
-        private void Connection_ConfigSectionUpdate(object sender, ARCLTypes.ConfigSectionUpdateEventArgs data)
+        private void Connection_ConfigSectionUpdate(object sender, ConfigSectionUpdateEventArgs data)
         {
             if (SectionName == null) return;
 
-            Sections[SectionName].AddRange(data.Sections);
+            lock (SectionsLockObject)
+                _Sections[SectionName].Add(data.Section);
 
-            ConfigManagerUpdate?.BeginInvoke(this, new ConfigManagerUpdateEventArgs(SectionName), null, null);
+            if (data.IsEnd)
+            {
+                IsSynced = true;
+                InSync?.BeginInvoke(this, SectionName, null, null);
+                SectionName = null;
+            }
         }
     }
 }

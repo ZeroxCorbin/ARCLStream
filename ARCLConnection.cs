@@ -134,7 +134,6 @@ namespace ARCL
             else return false;
         }
 
-        private ConfigSectionUpdateEventArgs NewConfigSection { get; set; } = new ConfigSectionUpdateEventArgs("endof");
         //Private
         private void Connection_DataReceived(object sender, string data)
         {
@@ -162,14 +161,7 @@ namespace ARCL
 
                 if (message.StartsWith("getconfigsection", StringComparison.CurrentCultureIgnoreCase) | message.StartsWith("endofgetconfigsection", StringComparison.CurrentCultureIgnoreCase))
                 {
-                    if (NewConfigSection.IsEnd)
-                        NewConfigSection = new ConfigSectionUpdateEventArgs(message);
-                    else
-                        NewConfigSection.Update(message);
-
-                    if (NewConfigSection.IsEnd)
-                        ConfigSectionUpdate?.BeginInvoke(this, NewConfigSection, null, null);
-
+                    ConfigSectionUpdate?.BeginInvoke(this, new ConfigSectionUpdateEventArgs(message), null, null);
                     continue;
                 }
 

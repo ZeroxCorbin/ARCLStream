@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
@@ -14,18 +16,25 @@ namespace ARCL
         public event JobCompleteEventHandler JobComplete;
 
         /// <summary>
-        /// Fires when the Jobs list is sycronized with the EM/LD job queue.
+        /// Raised when the Jobs list is sycronized with the EM job queue.
         /// </summary>
-        public delegate void InSyncUpdateEventHandler(object sender, bool data);
-        public event InSyncUpdateEventHandler InSync;
-
+        public delegate void InSyncEventHandler(object sender, bool state);
+        public event InSyncEventHandler InSync;
         /// <summary>
-        /// True when the Jobs list is sycronized with the EM/LD job queue.
+        /// True when the Jobs list is sycronized with the EM job queue.
         /// </summary>
         public bool IsSynced { get; private set; } = false;
-        public Dictionary<string, QueueManagerJob> Jobs { get; private set; }
 
-
+        public Dictionary<string, QueueManagerJob> _Jobs { get; private set; }
+        public ReadOnlyDictionary<string, QueueManagerJob> Jobs
+        {
+            get
+            {
+                lock (JobsLock)
+                    return new ReadOnlyDictionary<string, QueueManagerJob>(_Jobs);
+            }
+        }
+        private object JobsLock { get; set; } = new object();
         //Private
         private ARCLConnection Connection { get; }
 
@@ -44,7 +53,7 @@ namespace ARCL
 
             Connection.QueueJobUpdate += Connection_QueueJobUpdate;
 
-            Jobs = new Dictionary<string, QueueManagerJob>();
+            _Jobs = new Dictionary<string, QueueManagerJob>();
 
             //Initiate the the load of the current queue
             QueueShow();
@@ -58,95 +67,6 @@ namespace ARCL
             Connection.StopReceiveAsync();
         }
 
-        public void QueueJob(string jobToQueue)
-        {
-            #region Variables
-            string msg;
-            string[] messages;
-
-            Stopwatch timeout = new Stopwatch();
-            int segmentCount = 0;
-            #endregion
-
-            //Clear out message buffer
-            Connection.Read();
-            //Write to the queue
-            Connection.Write(jobToQueue);
-
-            #region Get ID and number of segments
-            timeout.Start();
-            while (timeout.ElapsedMilliseconds < 5000)
-            {
-                msg = Connection.Read();
-
-                if (msg.Contains("QueueMulti:"))
-                {
-                    if (!msg.Contains("EndQueueMulti"))
-                    {
-                        msg += Connection.Read("EndQueueMulti");
-                    }
-
-                    timeout.Stop();
-                    foreach (string line in msg.Split('\r', '\n'))
-                    {
-                        if (line.Contains("QueueMulti:"))
-                        {
-                            segmentCount++;
-                        }
-                    }
-
-                    messages = msg.Split('\r', '\n')[0].Split(' ');
-
-                    for (int i = 0; i < messages.Count(); i++)
-                    {
-                        if (messages[i].Contains("job_id"))
-                        {
-                            //JobName = messages[i + 1];
-                        }
-                    }
-                    break;
-
-                }
-                else
-                {
-                    if (msg.Contains("successfully queued"))
-                    {
-                        msg = msg.Split('\r', '\n')[0];
-
-                        timeout.Stop();
-                        messages = msg.Split(' ');
-
-                        for (int i = 0; i < messages.Count(); i++)
-                        {
-                            if (messages[i].Contains("PICKUP") || messages[i].Contains("DROPOFF"))
-                            {
-                                segmentCount++;
-                            }
-                            if (messages[i].Contains("job_id"))
-                            {
-                                //JobName = messages[i + 1];
-                            }
-                        }
-                        break;
-                    }
-                    else
-                    {
-                        //JobName = "Missing Job ID";
-                    }
-                }
-            }
-
-            if (timeout.ElapsedMilliseconds >= 10000)
-            {
-                timeout.Stop();
-            }
-
-            //SegmentCount = segmentCount;
-
-            //Console.WriteLine("Queued job: {0}, with {1} segment(s)", JobName, SegmentCount);
-            #endregion
-
-        }
         public string QueueMulti(List<QueueJobUpdateEventArgs> goals)
         {
             StringBuilder msg = new StringBuilder();
@@ -185,47 +105,82 @@ namespace ARCL
             return id;
         }
 
+        public bool UpdateJobSegment(ref QueueManagerJob job, string newGoalName, int segmentIndex = 1)
+        {
+            switch (job.Goals[segmentIndex].Status)
+            {
+                case ARCLStatus.Pending:
+                    break;
+                case ARCLStatus.InProgress:
+                    switch (job.Goals[segmentIndex].SubStatus)
+                    {
+                        case ARCLSubStatus.UnAllocated:
+                        case ARCLSubStatus.Allocated:
+                        case ARCLSubStatus.Driving:
+                            break;
+                        default:
+                            return false;
+                    }
+                    break;
+                default:
+                    return false;
+            }
+
+            QueueModify(job.Goals[segmentIndex].ID, "goal", newGoalName);
+
+            return true;
+        }
+
+        public bool CancelJob(ref QueueManagerJob job)
+        {
+            return true;
+        }
         //Private
         private bool QueueShow() => Connection.Write("QueueShow");
+        private bool QueueModify(string id, string type, string value) => Connection.Write($"queueModify {id} {type} {value}");
         private void Connection_QueueJobUpdate(object sender, QueueJobUpdateEventArgs data)
         {
-            if (data.IsEnd & !IsSynced)
+            lock (JobsLock)
             {
-                IsSynced = true;
-                InSync?.BeginInvoke(this, true, null, null);
-                return;
-            }
-
-            if (!Jobs.ContainsKey(data.JobID))
-            {
-                QueueManagerJob job = new QueueManagerJob(data);
-                Jobs.Add(job.ID, job);
-            }
-            else
-            {
-                int i = 0;
-                bool found = false;
-                foreach (QueueJobUpdateEventArgs currentQue in Jobs[data.JobID].Goals.ToList())
+                if (data.IsEnd & !IsSynced)
                 {
-                    if (currentQue.ID.Equals(data.ID))
-                    {
-                        Jobs[data.JobID].Goals[i] = data;
-                        found = true;
-                    }
-
-                    i++;
+                    IsSynced = true;
+                    InSync?.BeginInvoke(this, true, null, null);
+                    return;
                 }
-                if (!found) Jobs[data.JobID].AddGoal(data);
+
+                if (!_Jobs.ContainsKey(data.JobID))
+                {
+                    QueueManagerJob job = new QueueManagerJob(data);
+                    _Jobs.Add(job.ID, job);
+                }
+                else
+                {
+                    int i = 0;
+                    bool found = false;
+                    foreach (QueueJobUpdateEventArgs currentQue in _Jobs[data.JobID].Goals.ToList())
+                    {
+                        if (currentQue.ID.Equals(data.ID))
+                        {
+                            _Jobs[data.JobID].Goals[i] = data;
+                            found = true;
+                        }
+
+                        i++;
+                    }
+                    if (!found) _Jobs[data.JobID].AddGoal(data);
+                }
+
+                if (_Jobs[data.JobID].Status == ARCLStatus.Completed || _Jobs[data.JobID].Status == ARCLStatus.Cancelled)
+                    JobComplete?.Invoke(new object(), data);
             }
 
-            if (Jobs[data.JobID].Status == ARCLStatus.Completed || Jobs[data.JobID].Status == ARCLStatus.Cancelled)
-                JobComplete?.Invoke(new object(), data);
         }
         private string GetNewJobID()
         {
             string newID = RandomString(10, false);
 
-            while (Jobs.ContainsKey(newID))
+            while (_Jobs.ContainsKey(newID))
                 newID = RandomString(10, false);
 
             return newID;
@@ -244,6 +199,96 @@ namespace ARCL
                 return builder.ToString().ToLower();
             return builder.ToString();
         }
+
+        //public void QueueJob(string jobToQueue)
+        //{
+        //    #region Variables
+        //    string msg;
+        //    string[] messages;
+
+        //    Stopwatch timeout = new Stopwatch();
+        //    int segmentCount = 0;
+        //    #endregion
+
+        //    //Clear out message buffer
+        //    Connection.Read();
+        //    //Write to the queue
+        //    Connection.Write(jobToQueue);
+
+        //    #region Get ID and number of segments
+        //    timeout.Start();
+        //    while (timeout.ElapsedMilliseconds < 5000)
+        //    {
+        //        msg = Connection.Read();
+
+        //        if (msg.Contains("QueueMulti:"))
+        //        {
+        //            if (!msg.Contains("EndQueueMulti"))
+        //            {
+        //                msg += Connection.Read("EndQueueMulti");
+        //            }
+
+        //            timeout.Stop();
+        //            foreach (string line in msg.Split('\r', '\n'))
+        //            {
+        //                if (line.Contains("QueueMulti:"))
+        //                {
+        //                    segmentCount++;
+        //                }
+        //            }
+
+        //            messages = msg.Split('\r', '\n')[0].Split(' ');
+
+        //            for (int i = 0; i < messages.Count(); i++)
+        //            {
+        //                if (messages[i].Contains("job_id"))
+        //                {
+        //                    //JobName = messages[i + 1];
+        //                }
+        //            }
+        //            break;
+
+        //        }
+        //        else
+        //        {
+        //            if (msg.Contains("successfully queued"))
+        //            {
+        //                msg = msg.Split('\r', '\n')[0];
+
+        //                timeout.Stop();
+        //                messages = msg.Split(' ');
+
+        //                for (int i = 0; i < messages.Count(); i++)
+        //                {
+        //                    if (messages[i].Contains("PICKUP") || messages[i].Contains("DROPOFF"))
+        //                    {
+        //                        segmentCount++;
+        //                    }
+        //                    if (messages[i].Contains("job_id"))
+        //                    {
+        //                        //JobName = messages[i + 1];
+        //                    }
+        //                }
+        //                break;
+        //            }
+        //            else
+        //            {
+        //                //JobName = "Missing Job ID";
+        //            }
+        //        }
+        //    }
+
+        //    if (timeout.ElapsedMilliseconds >= 10000)
+        //    {
+        //        timeout.Stop();
+        //    }
+
+        //    //SegmentCount = segmentCount;
+
+        //    //Console.WriteLine("Queued job: {0}, with {1} segment(s)", JobName, SegmentCount);
+        //    #endregion
+
+        //}
 
         //public bool QueuePickup(string goal, out string o_jobid)
         //{

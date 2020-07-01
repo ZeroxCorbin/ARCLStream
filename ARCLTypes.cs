@@ -800,12 +800,13 @@ namespace ARCLTypes
 
     public class ConfigSectionUpdateEventArgs : EventArgs
     {
-        public List<string> Message { get; private set; } = new List<string>();
-        public List<ConfigSection> Sections { get; private set; } = new List<ConfigSection>();
-
+        public string Message { get; private set; }
+        public ConfigSection Section { get; private set; }
         public bool IsEnd { get; private set; }
         public ConfigSectionUpdateEventArgs(string msg)
         {
+            Message = msg;
+
             if (msg.StartsWith("endof", StringComparison.CurrentCultureIgnoreCase))
             {
                 IsEnd = true;
@@ -818,23 +819,23 @@ namespace ARCLTypes
             for (int i = 3; i < spl.Length; i++)
                 other += " " + spl[i];
 
-            Sections.Add(new ConfigSection(spl[1], spl[2], other));
+            Section = new ConfigSection(spl[1], spl[2], other);
         }
-        public void Update(string msg)
-        {
-            if (msg.StartsWith("endof", StringComparison.CurrentCultureIgnoreCase))
-            {
-                IsEnd = true;
-                return;
-            }
+        //public void Update(string msg)
+        //{
+        //    if (msg.StartsWith("endof", StringComparison.CurrentCultureIgnoreCase))
+        //    {
+        //        IsEnd = true;
+        //        return;
+        //    }
 
-            string[] spl = msg.Split(' ');
+        //    string[] spl = msg.Split(' ');
 
-            string other = "";
-            for (int i = 3; i < spl.Length; i++)
-                other += " " + spl[i];
+        //    string other = "";
+        //    for (int i = 3; i < spl.Length; i++)
+        //        other += " " + spl[i];
 
-            Sections.Add(new ConfigSection(spl[1], spl[2], other));
-        }
+        //    Sections.Add(new ConfigSection(spl[1], spl[2], other));
+        //}
     }
 }
