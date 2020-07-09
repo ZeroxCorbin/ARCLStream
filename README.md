@@ -1,3 +1,3 @@
 # ARCLStream
 
-Replaced by ARCLManager
+## Replaced by [ARCLManager](https://github.com/ZeroxCorbin/ARCLManager)
